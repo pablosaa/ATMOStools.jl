@@ -34,4 +34,89 @@ function theta_v(T, P, qv)
     return θ_v  
 end 
 
+"""
+! -------------------------------------------------------------------
+! Function to convert Specific [kg/kg] to mixing rations [kg/kg].
+! Input, Q_x  : Specific content in [kg/kg]
+! Output, mixr : Mixing ratio in [kg/kg]
+! ---
+"""
+function qx_to_mixr(Q_x)
+  
+  MIXR = Q_x/(1.0 - Q_x)
+  return MIXR
+end #function qx_to_mixr
+# ----/
+
+"""
+! ---------------------------------------------------------------
+! ELEMENTAL FUNCTION Convert mixing ratio to Relative Humidity.
+! HUMIDITY CONVERSION FORMULAS
+! Calculation formulas for humidity (B210973EN-F)
+! By (c) VAISALA 2003
+! https://www.hatchability.com/Vaisala.pdf
+!
+! ---
+! (c) 2019 Pablo Saavedra G.
+! Geophysical Institute, University of Bergen
+! See LICENSE
+!
+! ---
+! -> MIXR: Vapour mixing ratio [kg/kg]
+! -> P   : Pressure [hPa]
+! -> T   : Temperature [K]
+! <- RH  : Relative Humidity [%]
+"""
+function mixr_to_rh(MIXR, P, T)
+  real :: PWS, etha, A
+  const COEFF = 2.16679 # [g K J^-1]
+  const Tc = 647.096  # critical temperature [K]
+  const Pc = 220640   # critical pressure [hPa]
+  const B  = 0.6219907 # constant for air [kg/kg]
+  const CC = [-7.85951783, 1.84408259, -11.7866497, 22.6807411, -15.9618719, 1.80122502]
+  const EE = [1.0, 1.5, 3.0, 3.5, 4.0, 7.5]
+
+  etha = 1.0 - T/Tc
+  A = 0.0
+  #do i=1, 6
+  #   A = A + CC(i)*(etha**EE(i))
+  #end do
+  map(1:6) do i
+       A = A + CC[i]*(etha**EE[i])
+  end
+  
+  PWS = Pc*exp(A*Tc/T)
+  #RH = 1E-3*MIXR*T/PWS/COEFF
+  #RH = 100*PW/PWS
+  RH = 100*MIXR*P/(MIXR + B)/PWS
+  return RH
+end ##function mixr_to_rh
+# ----/
+
+"""
+! _________________________________________________________________
+! ELEMENTAL FuNCTION Specific Humidity to Relative Humidity
+! -> Qv : Specific Humidity [kg/kg]
+! -> P  : Pressure [hPa]
+! -> T  : Temperature [K]
+! <- RH : Relative Humidity [%]
+! ---
+"""
+function qv_to_rh(QV, P, T)
+  #implicit none
+  #real(kind=8), intent(in) :: QV, P, T
+  #real(kind=8) :: RH
+
+  # Local variables:
+  #real(kind=8) :: MIXR
+  
+  # Converting Specific Humidity to Mixing Ratio:
+  MIXR = qx_to_mixr(QV)
+  
+  RH = mixr_to_rh(MIXR, P, T)
+
+  return RH
+end #function qv_to_rh
+# ----/
+
 # end of file.
