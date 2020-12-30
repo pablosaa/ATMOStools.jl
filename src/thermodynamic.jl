@@ -3,6 +3,36 @@
 # See LICENCE
 
 """
+! _______________________________________________________________________
+! Subroutine to calculate the Virtual Temperature given T, MIXR
+!
+! --------------------------------------------------------------------
+! Function convert Temperature to Virtual Temp.
+! -> T    : Temperature [K]
+! -> MIXR : Vapour Mixing ratio [kg/kg]
+! <- Tv   : Virtual Temperature [K]
+! ---
+! (c) 2020, Pablo Saavedra G.
+! Geophysical Institute, University of Bergen
+! See LICENSE
+! ---
+"""
+function VirtualTemperature(T, MIXR)
+  #real(kind=8), intent(in) :: T, MIXR
+  #real(kind=8) :: TV
+  #! ** local variables
+  #! Rd gas constant dry air, Rv gas constant water vapour:
+  const Rd = 287  ! [J/kg/K]
+  const Rv = 461.5  ! [J/kg/K]
+  const ϵ = Rd/Rv           ! ~ 0.622
+
+  TV = T*(1.0 + MIXR/ϵ )/(1.0 + MIXR)
+  return TV
+end #function VirtualTemperature
+# ----/
+
+
+"""
 Virtual Temperature:
 input:
 * T: Temperature [K]
@@ -117,6 +147,32 @@ function qv_to_rh(QV, P, T)
 
   return RH
 end #function qv_to_rh
+# ----/
+
+"""
+! --------------------------------------------------------------------
+! Function to convert kg/kg to kg/m^3
+! -> Qx  : Specific quantity e.g. humidity [kg/kg]
+! -> T   : Temperature [K]
+! -> P   : Pressure [hPa]
+! -> MIXR: vapour mixing ration [kg/kg]
+! <- RHOx: Specific quantity [kg/m^3]
+! ---
+"""
+function MassRatio2MassVolume(Q_x, T, P ,MIXR)
+  #real(kind=8), intent(in) :: Q_x, T, P, MIXR
+  #real(kind=8) :: RHO_x
+  # Local variables:
+  # real(kind=8) :: Tv, RHO_air
+  const Rd = 287  # [J/kg/K]
+  const Rv = 461.5  # [J/kg/K]
+  
+  Tv = VirtualTemperature(T, MIXR)
+  RHO_air = (1.0E2*P)/Tv/Rd  # [kg/m^3]
+  RHO_x   = Q_x*RHO_air      # [kg/m^3]
+  
+  return RHO_x
+end #function MassRatio2MassVolume
 # ----/
 
 # end of file.
