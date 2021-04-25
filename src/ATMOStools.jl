@@ -1,5 +1,11 @@
 module ATMOStools
 
-greet() = print("Hello World!")
+using Printf
 
-end # module
+"""
+ATMOStools a set of functions and constant useful to work within the atmospheric physics and meteorology.
+
+"""
+ATMOStools
+
+end #module
