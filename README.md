@@ -8,5 +8,6 @@ The suit of functions is constantly under development.
 (c) 2020, Pablo Saavedra Garfias<br>
 [contact: pablo.saavedra [at] uni-leipzig.de](mailto:pablo.saavedra@uni-leipzig.de)<br>
 University of Leipzig<br>
+Faculty of Physics and Geosciences<br>
 
 See LICENSE
