@@ -1,0 +1,7 @@
+name = "ATMOStools"
+uuid = "f4bd9c7d-eeda-4f89-9af3-b8c6f828feac"
+authors = ["Pablo Saavedra G. <pablosaa@uni-bonn.de>"]
+version = "0.1.0"
+
+[deps]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
