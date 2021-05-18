@@ -8,7 +8,20 @@ ATMOStools a set of functions and constant useful for atmospheric physics and me
 """
 ATMOStools
 
+# ******************************************************************
 # Calculating Integrated Water Vapour Transport
+#
+"""
+Function to compute Integrated Water Vapour Transport
+IVT, IVT_vec = getIVT(rs::Dict)
+
+INPUT:
+* rs::Dict -> Dictionary with Radiosonde or Model data
+
+OUTPUT:
+* IVT -> total Integrated Water Vapour Transport [kg m^-1 s^-1]
+* IVT_vec -> IVT by wind component separated (meridional, zonal)
+"""
 function getIVT(rs)
     ΔP = rs[:Pa][2:end,:] - rs[:Pa][1:end-1,:]
     ΔP *= 1e3 # [Pa]
@@ -33,8 +46,21 @@ function getIVT(rs)
     
     return IVT, IVT_vec
 end
+# ---
 
+# ******************************************************************
 # Get Maximum IVT index and values
+#
+"""
+Function to obtain the altitude of the maximum IVT from profile
+idx, IVTmax = getMaxIVT_θ(IVT::Matrix{Float64})
+
+INPUT:
+* IVT::Matrix{Float64} -> 2D array with cumulative total IVT
+OUTPUT:
+* idx -> 1D Vector with the index of the maximum from IVT Matrix
+* IVTmax -> 1D Vector with maximum IVT
+"""
 function getMaxIVT_θ(IVT::Array{Float64,2})
     
     ii = argmax(IVT, dims=1)
@@ -46,8 +72,22 @@ function getMaxIVT_θ(IVT::Array{Float64,2})
     
     return ii, IVTmax
 end
+# ---
 
+# ********************************************************************
 # Calculating Richardson Number
+#
+"""
+Function to estimate the Richardson Number
+N², Ri = Ri_N(rs::Dict)
+
+INPUT: 
+* rs::Dict() -> Dictionary with Radiosonde or Model data
+ OUTPUT:
+* N2 -> Matrix with the Vaisaala frequency
+* Ri -> Matrix with the bulk Richardson Number
+
+"""
 function Ri_N(rs)
     θv = rs[:θ].*(1.0 .+ 0.6*rs[:QV])  # K
     Δθv = θv[2:end,:] .- θv[1,:]'  # K
