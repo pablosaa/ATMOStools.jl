@@ -1,9 +1,48 @@
-# This file contains thermodynamic functions
-# Part of ATMOStools.jl
+# This file is part of the ATMOStool.jl module and
+# contains atmospheric thermodynamic functions
+# 
 # See LICENCE
 
+# ********************************************************************
+# Defining global Atmospheric constatnts:
+#
+# Boltzman gas constant R (dry air)
+const Rd = 287.058   # [J/kg/K]
+
+# Rv gas constant water vapour:
+const Rv = 461.5  # [J/kg/K]
+
+# Specific Heat capacity (isobaric)
+const c_p = 1e3  # [J/kg/K]
+
+# Ratio R/c_p
+const κ = Rd/c_p  # ~ 0.286
+
+# Reference Pressure P0 [hPa]
+const P_0 = 1000
+
+const ϵ = Rd/Rv   # ~ 0.622
+
+# **********************************************************************
+# Function potential temperature
 """
-! _______________________________________________________________________
+    θ = θ(T, P)
+
+INPUT:
+* T -> Temperature [K]
+* P -> Pressure [hPa]
+
+OUTPUT:
+* θ -> Potential temperature [K]
+"""
+function θ(T, P)
+    return T*(P_0/P)^κ
+end
+
+# ********************************************************************
+# Function Virtual Temperature
+"""
+! ____________________________________________________________________
 ! Subroutine to calculate the Virtual Temperature given T, MIXR
 !
 ! --------------------------------------------------------------------
@@ -18,20 +57,17 @@
 ! ---
 """
 function VirtualTemperature(T, MIXR)
-  #real(kind=8), intent(in) :: T, MIXR
-  #real(kind=8) :: TV
-  #! ** local variables
-  #! Rd gas constant dry air, Rv gas constant water vapour:
-  const Rd = 287  ! [J/kg/K]
-  const Rv = 461.5  ! [J/kg/K]
-  const ϵ = Rd/Rv           ! ~ 0.622
+    #real(kind=8), intent(in) :: T, MIXR
+    #real(kind=8) :: TV
+    #! ** local variables
 
-  TV = T*(1.0 + MIXR/ϵ )/(1.0 + MIXR)
-  return TV
+    TV = T*(1.0 + MIXR/ϵ )/(1.0 + MIXR)
+    return TV
 end #function VirtualTemperature
 # ----/
 
-
+# **********************************************************************
+# Alternative Function for Virtual Temperature
 """
 Virtual Temperature:
 input:
@@ -46,22 +82,27 @@ function T_v(T, qv)
     T_v = T*(1.0 + qv/ϵ)/(1.0 + qv)
     return T_v
 end 
+# ----/
 
+# *********************************************************************
+# Function Virtual Potential Temperature
 """
 Virtual Potential Temperature
+
+θ_v = Theta_virtual(T, P, qv)
+
 Input:
 * T : Temperature [K]
 * P : Pressure [hPa]
 * qv: water vapour mixing ratio [g/g]
 Output:
-* theta_v: virtual potential temperature [K]
+* θ_v: virtual potential temperature [K]
 """
-function theta_v(T, P, qv)
+function Theta_virtual(T, P, qv)
     # Function to compute the virtual Potential Temperature:
-    κ = 0.286
-    T_virtual = T_v(T,qv)
-    θ_v =  T_virtual*(100/P)^κ
-    return θ_v  
+    
+    T_virtual = VirtualTemperature(T, qv)
+    return θ(T_virtual, P)  
 end 
 
 """
@@ -98,28 +139,28 @@ end #function qx_to_mixr
 ! <- RH  : Relative Humidity [%]
 """
 function mixr_to_rh(MIXR, P, T)
-  real :: PWS, etha, A
-  const COEFF = 2.16679 # [g K J^-1]
-  const Tc = 647.096  # critical temperature [K]
-  const Pc = 220640   # critical pressure [hPa]
-  const B  = 0.6219907 # constant for air [kg/kg]
-  const CC = [-7.85951783, 1.84408259, -11.7866497, 22.6807411, -15.9618719, 1.80122502]
-  const EE = [1.0, 1.5, 3.0, 3.5, 4.0, 7.5]
+  # real :: PWS, etha, A
+    COEFF = 2.16679 # [g K J^-1]
+    Tc = 647.096  # critical temperature [K]
+    Pc = 220640   # critical pressure [hPa]
+    B  = 0.6219907 # constant for air [kg/kg]
+    CC = (-7.85951783, 1.84408259, -11.7866497, 22.6807411, -15.9618719, 1.80122502)
+    EE = (1.0, 1.5, 3.0, 3.5, 4.0, 7.5)
 
-  etha = 1.0 - T/Tc
-  A = 0.0
-  #do i=1, 6
-  #   A = A + CC(i)*(etha**EE(i))
-  #end do
-  map(1:6) do i
-       A = A + CC[i]*(etha**EE[i])
-  end
+    etha = 1.0 - T/Tc
+    A = 0.0
+    #do i=1, 6
+    #   A = A + CC(i)*(etha**EE(i))
+    #end do
+    map(1:6) do i
+        A = A + CC[i]*(etha^EE[i])
+    end
   
-  PWS = Pc*exp(A*Tc/T)
-  #RH = 1E-3*MIXR*T/PWS/COEFF
-  #RH = 100*PW/PWS
-  RH = 100*MIXR*P/(MIXR + B)/PWS
-  return RH
+    PWS = Pc*exp(A*Tc/T)
+    #RH = 1E-3*MIXR*T/PWS/COEFF
+    #RH = 100*PW/PWS
+    RH = 100*MIXR*P/(MIXR + B)/PWS
+    return RH
 end ##function mixr_to_rh
 # ----/
 
@@ -164,8 +205,8 @@ function MassRatio2MassVolume(Q_x, T, P ,MIXR)
   #real(kind=8) :: RHO_x
   # Local variables:
   # real(kind=8) :: Tv, RHO_air
-  const Rd = 287  # [J/kg/K]
-  const Rv = 461.5  # [J/kg/K]
+#  const Rd = 287  # [J/kg/K]
+#  const Rv = 461.5  # [J/kg/K]
   
   Tv = VirtualTemperature(T, MIXR)
   RHO_air = (1.0E2*P)/Tv/Rd  # [kg/m^3]
