@@ -3,11 +3,12 @@ module ATMOStools
 using Printf
 
 """
-ATMOStools a set of functions and constant useful for atmospheric physics and meteorology.
+ATMOStools a set of functions and constants useful for atmospheric physics and meteorology.
 
 """
 ATMOStools
 
+include("thermodynamic.jl")
 # ******************************************************************
 # Calculating Integrated Water Vapour Transport
 #
@@ -19,7 +20,7 @@ INPUT:
 * rs::Dict -> Dictionary with Radiosonde or Model data
 
 OUTPUT:
-* IVT -> total Integrated Water Vapour Transport [kg m^-1 s^-1]
+* IVT -> total Integrated Water Vapour Transport [kg/m/s]
 * IVT_vec -> IVT by wind component separated (meridional, zonal)
 """
 function getIVT(rs)

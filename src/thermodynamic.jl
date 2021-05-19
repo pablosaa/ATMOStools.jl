@@ -19,7 +19,7 @@ const c_p = 1e3  # [J/kg/K]
 const κ = Rd/c_p  # ~ 0.286
 
 # Reference Pressure P0 [hPa]
-const P_0 = 1000
+const P_0 = 1000.0
 
 const ϵ = Rd/Rv   # ~ 0.622
 
@@ -38,7 +38,10 @@ OUTPUT:
 function θ(T, P)
     return T*(P_0/P)^κ
 end
-
+function θ(T::Matrix{Number}, P::Matrix{Number})::Matrix{Number}
+    return θ.(T, P)
+end
+# ----/
 # ********************************************************************
 # Function Virtual Temperature
 """
@@ -64,6 +67,9 @@ function VirtualTemperature(T, MIXR)
     TV = T*(1.0 + MIXR/ϵ )/(1.0 + MIXR)
     return TV
 end #function VirtualTemperature
+function VirtualTemperature(T::Matrix{Number}, MIXR::Matrix{Number})
+    return VirtualTemperature.(T, MIXR)
+end
 # ----/
 
 # **********************************************************************
@@ -82,6 +88,9 @@ function T_v(T, qv)
     T_v = T*(1.0 + qv/ϵ)/(1.0 + qv)
     return T_v
 end 
+function T_v(T::Matrix{Number}, qv::Matrix{Number})::Matrix{Number}
+    return T_v.(T, qv)
+end
 # ----/
 
 # *********************************************************************
@@ -103,7 +112,11 @@ function Theta_virtual(T, P, qv)
     
     T_virtual = VirtualTemperature(T, qv)
     return θ(T_virtual, P)  
-end 
+end
+function Theta_virtual(T::Matrix{Number}, P::Matrix{Number}, qv::Matrix{Number})::Matrix{Number}
+    return Theta_virtual.(T, P, qv)
+end
+# ----/
 
 """
 ! -------------------------------------------------------------------
@@ -114,9 +127,40 @@ end
 """
 function qx_to_mixr(Q_x)
   
-  MIXR = Q_x/(1.0 - Q_x)
-  return MIXR
+  return Q_x/(1.0 - Q_x)
 end #function qx_to_mixr
+function qx_to_mixr(Q_x::Matrix{Number})::Matrix{Number}
+    return qx_to_mixr.(Q_x)
+end
+# ----/
+
+"""
+! -------------------------------------------------------------
+! Function to calculate Partial pressure water vapour
+-> T  : Temperature [K]
+-> P  : Pressure [hPa]
+<- Es : Partial pressure [hPa]
+! ---
+"""
+function PWS(T)
+
+    COEFF = 2.16679 # [g K J^-1]
+    Tc = 647.096  # critical temperature [K]
+    Pc = 220640   # critical pressure [hPa]
+    B  = 0.6219907 # constant for air [kg/kg]
+    CC = (-7.85951783, 1.84408259, -11.7866497, 22.6807411, -15.9618719, 1.80122502)
+    EE = (1.0, 1.5, 3.0, 3.5, 4.0, 7.5)
+
+    etha = 1.0 - T/Tc
+    A = 0.0
+
+    map(1:6) do i
+        A = A + CC[i]*(etha^EE[i])
+    end
+    
+    E_s = Pc*exp(A*Tc/T)
+    return E_s
+end
 # ----/
 
 """
@@ -139,29 +183,15 @@ end #function qx_to_mixr
 ! <- RH  : Relative Humidity [%]
 """
 function mixr_to_rh(MIXR, P, T)
-  # real :: PWS, etha, A
-    COEFF = 2.16679 # [g K J^-1]
-    Tc = 647.096  # critical temperature [K]
-    Pc = 220640   # critical pressure [hPa]
     B  = 0.6219907 # constant for air [kg/kg]
-    CC = (-7.85951783, 1.84408259, -11.7866497, 22.6807411, -15.9618719, 1.80122502)
-    EE = (1.0, 1.5, 3.0, 3.5, 4.0, 7.5)
 
-    etha = 1.0 - T/Tc
-    A = 0.0
-    #do i=1, 6
-    #   A = A + CC(i)*(etha**EE(i))
-    #end do
-    map(1:6) do i
-        A = A + CC[i]*(etha^EE[i])
-    end
-  
-    PWS = Pc*exp(A*Tc/T)
-    #RH = 1E-3*MIXR*T/PWS/COEFF
     #RH = 100*PW/PWS
-    RH = 100*MIXR*P/(MIXR + B)/PWS
+    RH = 100*MIXR*P/(MIXR + B)/PWS(T)
     return RH
 end ##function mixr_to_rh
+function mixr_to_rh(MIXR::Matrix{Number}, P::Matrix{Number}, T::Matrix{Number})::Matrix{Number}
+    return mixr_to_rh.(MIXR, P, T)
+end
 # ----/
 
 """
@@ -174,12 +204,6 @@ end ##function mixr_to_rh
 ! ---
 """
 function qv_to_rh(QV, P, T)
-  #implicit none
-  #real(kind=8), intent(in) :: QV, P, T
-  #real(kind=8) :: RH
-
-  # Local variables:
-  #real(kind=8) :: MIXR
   
   # Converting Specific Humidity to Mixing Ratio:
   MIXR = qx_to_mixr(QV)
@@ -216,4 +240,51 @@ function MassRatio2MassVolume(Q_x, T, P ,MIXR)
 end #function MassRatio2MassVolume
 # ----/
 
+"""
+! ----------------------------------------------------------------------
+! Function to convert dew point to relative humidity
+! -> T  : Temperature [K]
+! -> Td : Dew point []
+! <- RH : Relative Humidity [%]
+! ---
+"""
+function dewpoint_to_rh(T, Td)
+
+    E_0 = 6.11    # [hPa]
+    T_0 = 273.15  # [K]
+    L_Rv = 5423.0 # [K]
+
+    # according to an approximation of the Clausius-Clapeyron Equation (CCE):
+    CCE(Tx) = E_0*exp(L_Rv*(1/T_0 - 1/Tx))
+    
+    RH = 100.0*CCE(Td)/CCE(T)
+    return RH
+end
+function dewpoint_to_rh(T::Matrix{Number}, Td::Matrix{Number})::Matrix{Number}
+    return dewpoint_to_rh.(T, Td)
+end
+# ----/
+
+"""
+! -----------------------------------------------------------------------
+! Function to convert from relative humidity to mixing ratio
+! -> RH  : relative humidity [%]
+! -> T   : temperature [K]
+! -> P   : pressure [hPa]
+! <- mixr: mixing ratio [g/g]
+"""
+function rh_to_mixr(RH, T, P)
+
+    B  = 0.6219907 # constant for air [kg/kg]
+
+    Es = PWS(T)
+    mixr = RH*B*Es/(100.0*P - RH*Es)
+    return mixr
+end
+function rh_to_mixr(RH::Matrix{Number}, T::Matrix{Number}, P::Matrix{Number})::Matrix{Number}
+    return rh_to_mixr.(RH, T, P)
+end
+# ----/
+
+# ***************************************************************************
 # end of file.
