@@ -1,4 +1,4 @@
-module ATMOStools
+module ATMOS
 
 using Printf
 
@@ -6,7 +6,7 @@ using Printf
 ATMOStools a set of functions and constants useful for atmospheric physics and meteorology.
 
 """
-ATMOStools
+ATMOS
 
 include("thermodynamic.jl")
 # ******************************************************************
@@ -14,20 +14,29 @@ include("thermodynamic.jl")
 #
 """
 Function to compute Integrated Water Vapour Transport
+
+IVT, IVT_vec = getIVT(Pa::Matrix, U::Matrix, V::Matrix, QV::Matrix)
 IVT, IVT_vec = getIVT(rs::Dict)
 
 INPUT:
-* rs::Dict -> Dictionary with Radiosonde or Model data
+* -> Pa : Pressure [hPa]
+* -> U,V: Wind speed component u and v [m/s]
+* -> QV : specific humidity [g/g]
+
+or
+
+* -> rs::Dict : Dictionary with Radiosonde or Model data
 
 OUTPUT:
-* IVT -> total Integrated Water Vapour Transport [kg/m/s]
-* IVT_vec -> IVT by wind component separated (meridional, zonal)
+* <- IVT    : total Integrated Water Vapour Transport [kg/m/s]
+* <- IVT_vec: IVT by wind component separated (meridional, zonal)
 """
-function getIVT(rs)
-    ΔP = rs[:Pa][2:end,:] - rs[:Pa][1:end-1,:]
-    ΔP *= 1e3 # [Pa]
-    tmp_u = rs[:QV] .* rs[:U]
-    tmp_v = rs[:QV] .* rs[:V]
+function getIVT(Pa::Matrix, U::Matrix, V::Matrix, QV::Matrix)
+    
+    ΔP = Pa[2:end,:] - Pa[1:end-1,:]
+    ΔP *= 1f2 # [Pa]
+    tmp_u = QV .* U
+    tmp_v = QV .* V
     z_top = 235  # index of the top layer to consider ≈ 306 hPa.
     # calculating IVT components u and v:
     IVT_u = map(1:z_top) do z
@@ -40,14 +49,18 @@ function getIVT(rs)
     IVT_u = vcat(IVT_u...)
     IVT_v = vcat(IVT_v...)
     IVT_vec = cat(IVT_u, IVT_v, dims=3)
-    IVT_vec /= 9.81
+    IVT_vec /= gravity_0
     # calculating total IVT:
     IVT = sqrt.(IVT_u.^2 + IVT_v.^2)
-    IVT /= 9.81
+    IVT /= gravity_0
     
     return IVT, IVT_vec
 end
-# ---
+function getIVT(rs::Dict)
+    IVT, IVT_vec = getIVT(10f0*rs[:Pa], rs[:U], rs[:V], rs[:qv])
+    return IVT, IVT_vec
+end
+# ----/
 
 # ******************************************************************
 # Get Maximum IVT index and values
@@ -62,7 +75,7 @@ OUTPUT:
 * idx -> 1D Vector with the index of the maximum from IVT Matrix
 * IVTmax -> 1D Vector with maximum IVT
 """
-function getMaxIVT_θ(IVT::Array{Float64,2})
+function getMaxIVT_θ(IVT::Matrix)
     
     ii = argmax(IVT, dims=1)
     # converting the CartesianIndexes ii from 2-D to 1-D :
@@ -80,25 +93,33 @@ end
 #
 """
 Function to estimate the Richardson Number
-N², Ri = Ri_N(rs::Dict)
+N², Ri = Ri_N(height, WSPD, QV, θ)
 
 INPUT: 
-* rs::Dict() -> Dictionary with Radiosonde or Model data
+* -> height: profile altitudes [m]
+* -> WSPD  : wind speed [m/s]
+* -> QV    : specific humidity [kg/m³]
+* -> θ     : potential temperature [K]
+OR
+* -> rs::Dict : Dictionary with Radiosonde or Model data
  OUTPUT:
-* N2 -> Matrix with the Vaisaala frequency
-* Ri -> Matrix with the bulk Richardson Number
+* <- N2 : Vaisaala frequency [Hz]
+* <- Ri : The bulk Richardson Number [-]
 
 """
-function Ri_N(rs)
-    θv = rs[:θ].*(1.0 .+ 0.6*rs[:QV])  # K
+function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix)
+    θv = VirtualTemperature(θ, QV)
     Δθv = θv[2:end,:] .- θv[1,:]'  # K
-    ΔZ = 1e3*(rs[:height][2:end] .- rs[:height][1])  # m
-    ΔU = rs[:U][2:end,:] .- rs[:U][1,:]'  # m/s
+    ΔZ = height[2:end] .- height[1]  # m
+    ΔU = WSPD[2:end,:] .- WSPD[1,:]'  # m/s
     N2 = (Δθv./ΔZ)./θv[1:end-1,:]
-    N2 *= 9.81
-
-    tmp = (ΔU./ΔZ).^2
-    Ri = N2./tmp
+    N2 *= gravity_0
+    # wind shear gradient:
+    Ri = N2./(ΔU./ΔZ).^2
+    return N2, Ri
+end
+function Ri_N(rs::Dict)
+    N2, Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ])
     return N2, Ri
 end
 

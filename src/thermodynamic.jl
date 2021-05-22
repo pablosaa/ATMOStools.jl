@@ -21,6 +21,9 @@ const κ = Rd/c_p  # ~ 0.286
 # Reference Pressure P0 [hPa]
 const P_0 = 1000.0
 
+# Gravity acceleration g [m/s²]
+const gravity_0 = 9.81
+
 const ϵ = Rd/Rv   # ~ 0.622
 
 # **********************************************************************
@@ -38,7 +41,7 @@ OUTPUT:
 function θ(T, P)
     return T*(P_0/P)^κ
 end
-function θ(T::Matrix{Number}, P::Matrix{Number})::Matrix{Number}
+function θ(T::Matrix, P::Matrix)::Matrix
     return θ.(T, P)
 end
 # ----/
@@ -63,11 +66,11 @@ function VirtualTemperature(T, MIXR)
     #real(kind=8), intent(in) :: T, MIXR
     #real(kind=8) :: TV
     #! ** local variables
-
     TV = T*(1.0 + MIXR/ϵ )/(1.0 + MIXR)
+
     return TV
 end #function VirtualTemperature
-function VirtualTemperature(T::Matrix{Number}, MIXR::Matrix{Number})
+function VirtualTemperature(T::Matrix, MIXR::Matrix)
     return VirtualTemperature.(T, MIXR)
 end
 # ----/
@@ -88,7 +91,7 @@ function T_v(T, qv)
     T_v = T*(1.0 + qv/ϵ)/(1.0 + qv)
     return T_v
 end 
-function T_v(T::Matrix{Number}, qv::Matrix{Number})::Matrix{Number}
+function T_v(T::Matrix, qv::Matrix)::Matrix
     return T_v.(T, qv)
 end
 # ----/
@@ -113,7 +116,7 @@ function Theta_virtual(T, P, qv)
     T_virtual = VirtualTemperature(T, qv)
     return θ(T_virtual, P)  
 end
-function Theta_virtual(T::Matrix{Number}, P::Matrix{Number}, qv::Matrix{Number})::Matrix{Number}
+function Theta_virtual(T::Matrix, P::Matrix, qv::Matrix)::Matrix
     return Theta_virtual.(T, P, qv)
 end
 # ----/
@@ -129,7 +132,7 @@ function qx_to_mixr(Q_x)
   
   return Q_x/(1.0 - Q_x)
 end #function qx_to_mixr
-function qx_to_mixr(Q_x::Matrix{Number})::Matrix{Number}
+function qx_to_mixr(Q_x::Matrix)::Matrix
     return qx_to_mixr.(Q_x)
 end
 # ----/
@@ -189,7 +192,7 @@ function mixr_to_rh(MIXR, P, T)
     RH = 100*MIXR*P/(MIXR + B)/PWS(T)
     return RH
 end ##function mixr_to_rh
-function mixr_to_rh(MIXR::Matrix{Number}, P::Matrix{Number}, T::Matrix{Number})::Matrix{Number}
+function mixr_to_rh(MIXR::Matrix, P::Matrix, T::Matrix)::Matrix
     return mixr_to_rh.(MIXR, P, T)
 end
 # ----/
@@ -260,7 +263,7 @@ function dewpoint_to_rh(T, Td)
     RH = 100.0*CCE(Td)/CCE(T)
     return RH
 end
-function dewpoint_to_rh(T::Matrix{Number}, Td::Matrix{Number})::Matrix{Number}
+function dewpoint_to_rh(T::Matrix, Td::Matrix)::Matrix
     return dewpoint_to_rh.(T, Td)
 end
 # ----/
@@ -281,7 +284,7 @@ function rh_to_mixr(RH, T, P)
     mixr = RH*B*Es/(100.0*P - RH*Es)
     return mixr
 end
-function rh_to_mixr(RH::Matrix{Number}, T::Matrix{Number}, P::Matrix{Number})::Matrix{Number}
+function rh_to_mixr(RH::Matrix, T::Matrix, P::Matrix)::Matrix
     return rh_to_mixr.(RH, T, P)
 end
 # ----/
