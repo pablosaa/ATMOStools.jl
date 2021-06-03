@@ -122,6 +122,31 @@ function Ri_N(rs::Dict)
     N2, Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ])
     return N2, Ri
 end
+# ----/
 
+# **********************************************************************
+# Calculating gradient of atmospheric profile
+"""
+Function to calculate the first gradient of a given variable respect of height
+ΔX = ProfileGradient(height::Vector, X::Matrix)
 
+INPUT:
+* -> height: profile altitudes []
+* -> X     : variable to calculate gradient
+
+OUTPUT:
+* <- ΔX    : Gradient of variabe X
+
+"""
+function ProfileGradient(height::Vector, X::Matrix)
+    ΔX = X[2:end,:] .- X[1:end-1,:]
+    ΔZ = height[2:end] .- height[1:end-1]
+
+    ΔX ./= ΔZ
+
+    return ΔX
+end
+# ----/
+
+# --
 end #module
