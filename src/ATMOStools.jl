@@ -112,15 +112,27 @@ function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix)
     Δθv = θv[2:end,:] .- θv[1,:]'  # K
     ΔZ = height[2:end] .- height[1]  # m
     ΔU = WSPD[2:end,:] .- WSPD[1,:]'  # m/s
-    N2 = (Δθv./ΔZ)./θv[1:end-1,:]
-    N2 *= gravity_0
+    N² = (Δθv./ΔZ)./θv[1:end-1,:]
+    N² *= gravity_0
     # wind shear gradient:
-    Ri = N2./(ΔU./ΔZ).^2
-    return N2, Ri
+    Ri = N²./(ΔU./ΔZ).^2
+    return N², Ri
 end
 function Ri_N(rs::Dict)
-    N2, Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ])
-    return N2, Ri
+    #N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ])
+    height = 1f3*rs[:height]
+    WSPD = rs[:WSPD]
+    QV = rs[:qv]
+    θ = rs[:θ]
+    θv = VirtualTemperature(θ, QV)
+    Δθv = θv .- θv[1,:]'  # K
+    ΔZ = height #[2:end] .- height[1:end-1]  # m
+    ΔU = WSPD #[2:end, :] .- WSPD[1:end-1, :]  # m/s
+    N² = (Δθv.*ΔZ)./θv[1,:]'
+    N² *= gravity_0
+    # wind shear gradient:
+    Ri = N²./(ΔU).^2
+    return N², Ri
 end
 # ----/
 
