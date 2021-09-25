@@ -140,23 +140,80 @@ end
 # Calculating gradient of atmospheric profile
 """
 Function to calculate the first gradient of a given variable respect of height
-ΔX = ProfileGradient(height::Vector, X::Matrix)
+δT = ∇ₕT(T::AbstractMatrix, h::Vector)
 
 INPUT:
-* -> height: profile altitudes []
-* -> X     : variable to calculate gradient
+* -> h : profile altitudes []
+* -> T : Profile variable to calculate gradient
 
 OUTPUT:
-* <- ΔX    : Gradient of variabe X
+* <- δT : Gradient of variabe T with respect of variable h
 
 """
-function ProfileGradient(height::Vector, X::Matrix)
-    ΔX = X[2:end,:] .- X[1:end-1,:]
-    ΔZ = height[2:end] .- height[1:end-1]
+function ∇ₕT(T::AbstractMatrix, h::Vector)
+    δH = diff(h)
+    δT = diff(T, dims=1)
 
-    ΔX ./= ΔZ
+    return δT./δH
+end
+# ----/
 
-    return ΔX
+
+# *********************************************************************
+# Capturing the inversion layers in a profile variable
+function Indices_Inversion_Layers(T::AbstractMatrix, H::Vector; mxhg=7, ΔH=0.06, ΔT=0.5)
+
+    m, nt = size(T)
+    mxidx = findfirst(x-> x ≥ mxhg, H)
+
+    Max_inv_layer = 4
+    out_idx_bot = Matrix{Int32}(undef, Max_inv_layer, nt) = 0
+    out_idx_top = Matrix{Int32}(undef, Max_inv_layer, nt) = 0
+    
+    # calculating the gradient respect to height h
+    δTz = ∇ₕT(T, H)
+
+    # defining dummy expression:
+    ex =:(δTz < 0)
+    for tline ∈ (1:nt)
+        idx_bot = Vector{Int32}()
+        idx_top = Vector{Int32}()
+
+        for i ∈ (1:mxidx)
+	    ex.args[2] = δTz[i, tline]
+		
+	    if !eval(ex)
+            
+	        if ex.args[1] == :<
+		    push!(idx_bot, i) #i-1
+		    ex.args[1] = :≥
+	                else
+		    push!(idx_top, i)
+		    ex.args[1] = :<
+                        end
+	    end
+        end
+		
+        # Merging layers closer than 60m form top to bottom
+        # rs[:height][idx_bot[2:end]] .- rs[:height][idx_top[1:end-1]] 
+        δH_tb = H[idx_bot[2:end]] .- H[idx_top[1:end-1]]
+        idx_out = δH_tb |> x-> (x .≤ ΔH) |> findall
+        deleteat!(idx_bot, idx_out.+1)
+        deleteat!(idx_top, idx_out)
+	
+        # Dismissing layers with T inversion strength < 0.5 °C
+        # rs[:T][idx_top, tline] .- rs[:T][idx_bot, tline]
+        δTinv = T[idx_top, tline] .- T[idx_bot, tline]
+        idx_inv = findall(x-> x ≤ ΔT, δTinv)
+        deleteat!(idx_bot, idx_inv)
+        deleteat!(idx_top, idx_inv)
+
+        ninv = min(length(idx_bot), Max_inv_layer)
+        out_idx_bot[1:ninv, tline] = idx_bot
+        out_idx_top[1:ninv, tline] = idx_top
+    end
+    
+    return out_idx_bot, out_idx_top
 end
 # ----/
 
