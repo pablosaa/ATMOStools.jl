@@ -161,14 +161,31 @@ end
 
 # *********************************************************************
 # Capturing the inversion layers in a profile variable
-function Indices_Inversion_Layers(T::AbstractMatrix, H::Vector; mxhg=7, ΔH=0.06, ΔT=0.5)
+"""
+Algorithm to estiamte the profile indexes for bottom and top of inversion
+layers within the atmosphere.
+A maximum of 4 inversion layers is detected by the algorithm.
+
+BASIC USAGE:
+> idx_bottom, idx_top = estimate_inversion_layers(T::AbstractMatrix, H::Vector)
+
+will return a matrix of indices containing the positon of up to 4 inversion layers
+in the input profile T, based on the altitude H in km
+
+Optional parameters are:
+* mxhg = 7, which indicates the maximum altitute to consider in km (default 7 km).
+* δH = 0.08, sub-inversion-layers separated by less than δH km will be merged.
+* δT = 0.5, negative/positive lapse-rate below δT are ignored and considered on layer.
+* mxly = 4, maximum inversion layers to consider (default 4 layers)
+
+"""
+function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=7, δH=0.08, δT=0.5, mxly=4)
 
     m, nt = size(T)
     mxidx = findfirst(x-> x ≥ mxhg, H)
 
-    Max_inv_layer = 4
-    out_idx_bot = Matrix{Int32}(undef, Max_inv_layer, nt) = 0
-    out_idx_top = Matrix{Int32}(undef, Max_inv_layer, nt) = 0
+    out_idx_bot = Matrix{Int32}(undef, mxly, nt) .= 0
+    out_idx_top = Matrix{Int32}(undef, mxly, nt) .= 0
     
     # calculating the gradient respect to height h
     δTz = ∇ₕT(T, H)
@@ -195,25 +212,87 @@ function Indices_Inversion_Layers(T::AbstractMatrix, H::Vector; mxhg=7, ΔH=0.06
         end
 		
         # Merging layers closer than 60m form top to bottom
-        # rs[:height][idx_bot[2:end]] .- rs[:height][idx_top[1:end-1]] 
         δH_tb = H[idx_bot[2:end]] .- H[idx_top[1:end-1]]
-        idx_out = δH_tb |> x-> (x .≤ ΔH) |> findall
+        idx_out = δH_tb |> x-> (x .≤ δH) |> findall
         deleteat!(idx_bot, idx_out.+1)
         deleteat!(idx_top, idx_out)
-	
+
+        # Merging consecutive layers with difference less than threshold:
+        δTinv = T[idx_top[1:end-1], tline] .- T[idx_bot[2:end], tline]
+	idx_inv = findall(x-> x ≤ δT, δTinv)	
+	deleteat!(idx_bot, idx_inv.+1)
+	deleteat!(idx_top, idx_inv)
+        
         # Dismissing layers with T inversion strength < 0.5 °C
-        # rs[:T][idx_top, tline] .- rs[:T][idx_bot, tline]
         δTinv = T[idx_top, tline] .- T[idx_bot, tline]
-        idx_inv = findall(x-> x ≤ ΔT, δTinv)
+        idx_inv = findall(x-> x ≤ δT, δTinv)
         deleteat!(idx_bot, idx_inv)
         deleteat!(idx_top, idx_inv)
 
-        ninv = min(length(idx_bot), Max_inv_layer)
+        # Returning the allowed layers:
+        ninv = min(length(idx_bot), mxly)
         out_idx_bot[1:ninv, tline] = idx_bot
         out_idx_top[1:ninv, tline] = idx_top
     end
     
     return out_idx_bot, out_idx_top
+end
+# ----/
+
+# **********************************************************************
+# extracting the inversion variables from the specified profiles
+function get_inversion_variables(idx_bot, idx_top, rs::Dict; vars=(:T, :Pa, :height))
+
+    nv, nt = size(idx_bot)
+
+    # creating a set of variables to map the inversion variables:
+    # e.g. :Pa will be mapped to :PA for bottom and top inversion and
+    # to :ΔPA for strength
+    varset = Dict( x =>
+                   let tmp = uppercase(String(x))
+                   (Symbol(tmp), Symbol(:Δ, tmp))
+                   end
+                   for x in vars)
+    
+    # converting output keys to uppercase symbols
+    out = let tmp0 = @. uppercase(String(vars)) |> Symbol
+        # for inversion base variables:
+        tmp1 = Dict(x => Matrix{Float32}(undef, nv, nt) for x ∈ tmp0)
+        
+        # for inversin top - bottom differences variables:
+        tmp2 = Dict(Symbol(:Δ, x) => Matrix{Float32}(undef, nv, nt) for x in tmp0)
+
+        # convining both set of variables:
+        merge!(tmp1, tmp2)
+        
+        # Initializing all variables with NaN:
+        foreach(x-> tmp1[x] .= NaN, keys(tmp1))
+
+        #returning variable:
+        tmp1
+    end
+    
+    # filling output variable with inversion estimations:
+    foreach(vars) do X
+        for i ∈ (1:nt)
+            for j ∈ (1:nv)
+                i_top = idx_top[j,i]
+                i_bot = idx_bot[j,i]
+
+                i_bot<1 && continue
+
+                # for difference variables:
+                out[varset[X][2]][j, i] = ndims(rs[X])==1 ? rs[X][i_top] .- rs[X][i_bot] : rs[X][i_top, i] .- rs[X][i_bot, i]
+
+                # for bottom variables:
+                out[varset[X][1]][j, i] = ndims(rs[X])==1 ? rs[X][i_bot] : rs[X][i_bot, i]
+
+            end
+        end
+            
+    end
+
+    return out
 end
 # ----/
 
