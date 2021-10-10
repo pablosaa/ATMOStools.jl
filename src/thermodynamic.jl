@@ -19,13 +19,25 @@ const c_p = 1e3  # [J/kg/K]
 const κ = Rd/c_p  # ~ 0.286
 
 # Reference Pressure P0 [hPa]
-const P_0 = 1000.0
+const P₀ = 1013.25
+
+# Temperature reference level [K]
+const T₀ = 288.15
+
+# Lapse-rate reference level [K/m]
+const Lp₀ = -0.0065
 
 # Gravity acceleration g [m/s²]
-const gravity_0 = 9.81
+const g₀ = 9.81
 
 const ϵ = Rd/Rv   # ~ 0.622
 
+# M = molar mass of Earth's air: 0.0289644 kg/mol
+const M_air =  0.0289644
+
+# R* = universal gas constant: 8.3144598 J/(mol·K)
+const R = 8.3144598
+    
 # **********************************************************************
 # Function potential temperature
 """
@@ -39,7 +51,7 @@ OUTPUT:
 * θ -> Potential temperature [K]
 """
 function θ(T, P)
-    return T*(P_0/P)^κ
+    return T*(P₀/P)^κ
 end
 function θ(T::Matrix, P::Matrix)::Matrix
     return θ.(T, P)
@@ -287,6 +299,62 @@ end
 function rh_to_mixr(RH::Matrix, T::Matrix, P::Matrix)::Matrix
     return rh_to_mixr.(RH, T, P)
 end
+# ----/
+
+
+# ***************************************************************
+"""
+Barometric Formula for Pressure
+See [Barometric Formula](https://en.wikipedia.org/wiki/Barometric_formula)
+
+Pa = barometric_formula(H)
+
+where:
+H -> altitude in [m]
+Pa <- Pressure level in [Pa]
+
+"""
+function barometric_formula(H::Number)
+
+    faktor = -g₀*M_air/R/Lp₀
+    
+    P_h = P₀*(T₀ + Lp₀*(H))/T₀
+    P_h ^= faktor
+
+    return P_h
+end
+
+
+# ********************************************************************
+"""
+--------------------------------------------------------------------
+Function to estimate the Pressure level from given Altitude.
+If Pressure level input is not given, then a Barometric Formula is
+used with reference level b=0. 
+See [Barometric Formula](https://en.wikipedia.org/wiki/Barometric_formula)
+
+
+"""
+function altitude2pressure(H_in; H_ref=nothing, Pa_ref=nothing )
+
+    if isnothing(H_ref) | isnothing(Pa_ref)
+        return barometric_formula(H_in)
+        
+    elseif typeof(H_ref) <: AbstractVector
+
+        i_1 = findlast(H_ref .< H_in)
+	isempty(i_1) && error("Given altitude not foundin reference!")
+	i_2 = findfirst(H_ref[i_1:end] .> H_in)
+
+        Pa = (Pa_ref[i_2] - Pa_ref[i_1])/(H_ref[i_2] - H_ref[i_1])*(H_in - H_ref[1])+Pa_ref[1]
+
+        return Pa
+    else
+        error("Please introduce H_ref and P_ref as ::Vector type!")
+    end
+end
+
+
 # ----/
 
 # ***************************************************************************

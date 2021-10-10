@@ -179,7 +179,7 @@ Optional parameters are:
 * mxly = 4, maximum inversion layers to consider (default 4 layers)
 
 """
-function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=7, δH=0.08, δT=0.5, mxly=4)
+function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.08, δT=0.5, mxly=3)
 
     m, nt = size(T)
     mxidx = findfirst(x-> x ≥ mxhg, H)
@@ -204,10 +204,11 @@ function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=7, δH=0.0
 	        if ex.args[1] == :<
 		    push!(idx_bot, i) #i-1
 		    ex.args[1] = :≥
-	                else
+                        
+	        else
 		    push!(idx_top, i)
 		    ex.args[1] = :<
-                        end
+                end
 	    end
         end
 		
@@ -245,6 +246,9 @@ function get_inversion_variables(idx_bot, idx_top, rs::Dict; vars=(:T, :Pa, :hei
 
     nv, nt = size(idx_bot)
 
+    # Variable type
+    VarType = Matrix{Float32}}(undef, nv, nt)
+    
     # creating a set of variables to map the inversion variables:
     # e.g. :Pa will be mapped to :PA for bottom and top inversion and
     # to :ΔPA for strength
@@ -257,10 +261,10 @@ function get_inversion_variables(idx_bot, idx_top, rs::Dict; vars=(:T, :Pa, :hei
     # converting output keys to uppercase symbols
     out = let tmp0 = @. uppercase(String(vars)) |> Symbol
         # for inversion base variables:
-        tmp1 = Dict(x => Matrix{Float32}(undef, nv, nt) for x ∈ tmp0)
+        tmp1 = Dict(x => VarType for x ∈ tmp0)
         
         # for inversin top - bottom differences variables:
-        tmp2 = Dict(Symbol(:Δ, x) => Matrix{Float32}(undef, nv, nt) for x in tmp0)
+        tmp2 = Dict(Symbol(:Δ, x) => VarType for x in tmp0)
 
         # convining both set of variables:
         merge!(tmp1, tmp2)
