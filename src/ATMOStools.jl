@@ -242,13 +242,38 @@ end
 
 # **********************************************************************
 # extracting the inversion variables from the specified profiles
-function get_inversion_variables(idx_bot, idx_top, rs::Dict; vars=(:T, :Pa, :height))
+"""
+function to extract from atmospheric profile variables the bottom and
+ the thickness of the inversion give the profile indeces obtained by
+the ATMOStools.jl function estimate_inversion_layers()
 
+Default atmospheric variables are: T, Pa and height
+USAGE:
+
+out::Dict = get_inversion_variables(idx_bottom, idx_top, RS::Dict)
+
+or for only one variable, e.g. temperature:
+
+out::Dict = get_inversion_variables(idx_bottom, idx_top, RS::Dict, vars=(:T, ))
+
+or for T, height and Qv:
+
+out::Dict = get_inversion_variables(idx_bottom, idx_top, RS::Dict, vars=(:T, :height, :qv))
+
+note that the Symbols in vars=() need to match with the variables in RS:Dict().
+
+The output is a dictionary with the same variables in capital and added the thickness
+with a sufix Δ, e.g. for temperature the output Dict will have two related variables:
+:T and :ΔT for temperature bottom and strength, respectively.
+
+"""
+function get_inversion_variables(idx_bot, idx_top, rs::Dict; addvars=())
+
+    # Default variables to use:
+    vars = (:T, :height, Symbol.(addvars)...)
     nv, nt = size(idx_bot)
 
-    # Variable type
-    VarType = Matrix{Float32}}(undef, nv, nt)
-    
+            
     # creating a set of variables to map the inversion variables:
     # e.g. :Pa will be mapped to :PA for bottom and top inversion and
     # to :ΔPA for strength
@@ -256,49 +281,97 @@ function get_inversion_variables(idx_bot, idx_top, rs::Dict; vars=(:T, :Pa, :hei
                    let tmp = uppercase(String(x))
                    (Symbol(tmp), Symbol(:Δ, tmp))
                    end
-                   for x in vars)
+                   for x in vars if haskey(rs,x))
+
+    # Creating output dictionary:
+    out = Dict()
     
-    # converting output keys to uppercase symbols
-    out = let tmp0 = @. uppercase(String(vars)) |> Symbol
-        # for inversion base variables:
-        tmp1 = Dict(x => VarType for x ∈ tmp0)
-        
-        # for inversin top - bottom differences variables:
-        tmp2 = Dict(Symbol(:Δ, x) => VarType for x in tmp0)
+    # filling output variable with inversion estimations:	
+    foreach(vars) do T
+	out[varset[T][1]] = Matrix{Float32}(undef, nv, nt) .= NaN
+	out[varset[T][2]] = Matrix{Float32}(undef, nv, nt) .= NaN
+		
+	for i ∈ (1:nv)
+	    
+	    for j ∈ findall(idx_bot[i,:] .> 0)
+		K₀ = idx_bot[i, j]
+		K₁ = idx_top[i, j]
+		if typeof(rs[T]) <: Vector
+                    # variables with bottom value: 
+		    out[varset[T][1]][i, j] = rs[T][K₀]
 
-        # convining both set of variables:
-        merge!(tmp1, tmp2)
-        
-        # Initializing all variables with NaN:
-        foreach(x-> tmp1[x] .= NaN, keys(tmp1))
+                    # variables with strength value:
+		    out[varset[T][2]][i, j] = rs[T][K₁] - rs[T][K₀]
+		else
+		    # variables with bottom value: 
+		    out[varset[T][1]][i, j] = rs[T][K₀, j]
 
-        #returning variable:
-        tmp1
+                    # variables with strength value:
+		    out[varset[T][2]][i, j] = rs[T][K₁, j] - rs[T][K₀, j]
+		end
+	    end
+	end
     end
     
-    # filling output variable with inversion estimations:
-    foreach(vars) do X
-        for i ∈ (1:nt)
-            for j ∈ (1:nv)
-                i_top = idx_top[j,i]
-                i_bot = idx_bot[j,i]
-
-                i_bot<1 && continue
-
-                # for difference variables:
-                out[varset[X][2]][j, i] = ndims(rs[X])==1 ? rs[X][i_top] .- rs[X][i_bot] : rs[X][i_top, i] .- rs[X][i_bot, i]
-
-                # for bottom variables:
-                out[varset[X][1]][j, i] = ndims(rs[X])==1 ? rs[X][i_bot] : rs[X][i_bot, i]
-
-            end
-        end
-            
-    end
-
     return out
+   
 end
 # ----/
 
 # --
 end #module
+
+
+##v, nt = size(idx_bot)
+##
+##  # Variable type
+##  VarType = Matrix{Float32}(undef, nv, nt)
+##  
+##  # creating a set of variables to map the inversion variables:
+##  # e.g. :Pa will be mapped to :PA for bottom and top inversion and
+##  # to :ΔPA for strength
+##  varset = Dict( x =>
+##                 let tmp = uppercase(String(x))
+##                 (Symbol(tmp), Symbol(:Δ, tmp))
+##                 end
+##                 for x in vars)
+##  
+##  # converting output keys to uppercase symbols
+##  out = let tmp0 = @. uppercase(String(vars)) |> Symbol
+##      # for inversion base variables:
+##      tmp1 = Dict(x => VarType for x ∈ tmp0)
+##      
+##      # for inversin top - bottom differences variables:
+##      tmp2 = Dict(Symbol(:Δ, x) => VarType for x in tmp0)
+##
+##      # convining both set of variables:
+##      merge!(tmp1, tmp2)
+##      
+##      # Initializing all variables with NaN:
+##      foreach(x-> tmp1[x] .= NaN, keys(tmp1))
+##
+##      #returning variable:
+##      tmp1
+##  end
+##  
+##  # filling output variable with inversion estimations:
+##  foreach(vars) do X
+##      for i ∈ (1:nt)
+##          for j ∈ (1:nv)
+##              i_top = idx_top[j,i]
+##              i_bot = idx_bot[j,i]
+##
+##              i_bot<1 && continue
+##
+##              # for difference variables:
+##              out[varset[X][2]][j, i] = ndims(rs[X])==1 ? rs[X][i_top] .- rs[X][i_bot] : rs[X][i_top, i] .- rs[X][i_bot, i]
+##
+##              # for bottom variables:
+##              out[varset[X][1]][j, i] = ndims(rs[X])==1 ? rs[X][i_bot] : rs[X][i_bot, i]
+##
+##          end
+##      end
+##          
+##  end
+##
+##  return out
