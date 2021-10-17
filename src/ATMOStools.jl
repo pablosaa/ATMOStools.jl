@@ -230,7 +230,10 @@ function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.
                 end
 	    end
         end
-		
+
+        # Checking if idx_bot and idx_top have same length:
+        ex.args[1] == :≥ && pop!(idx_bot)
+        
         # Merging layers closer than 60m form top to bottom
         δH_tb = H[idx_bot[2:end]] .- H[idx_top[1:end-1]]
         idx_out = δH_tb |> x-> (x .≤ δH) |> findall
@@ -251,8 +254,8 @@ function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.
 
         # Returning the allowed layers:
         ninv = min(length(idx_bot), mxly)
-        out_idx_bot[1:ninv, tline] = idx_bot
-        out_idx_top[1:ninv, tline] = idx_top
+        out_idx_bot[1:ninv, tline] = idx_bot[1:ninv]
+        out_idx_top[1:ninv, tline] = idx_top[1:ninv]
     end
     
     return out_idx_bot, out_idx_top
