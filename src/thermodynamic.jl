@@ -18,10 +18,10 @@ const c_p = 1e3  # [J/kg/K]
 # Ratio R/c_p
 const κ = Rd/c_p  # ~ 0.286
 
-# Reference Pressure P0 [hPa]
+# Reference meteorological standard Pressure P0 [hPa]
 const P₀ = 1013.25
 
-# Temperature reference level [K]
+# Meteorological standard Temperature reference level [K]
 const T₀ = 288.15
 
 # Lapse-rate reference level [K/m]
@@ -52,6 +52,9 @@ OUTPUT:
 """
 function θ(T, P)
     return T*(P₀/P)^κ
+end
+function θ(T::Vector, P::Vector)::Vector
+    return θ.(T, P)
 end
 function θ(T::Matrix, P::Matrix)::Matrix
     return θ.(T, P)
@@ -318,8 +321,9 @@ function barometric_formula(H::Number)
 
     faktor = -g₀*M_air/R/Lp₀
     
-    P_h = P₀*(T₀ + Lp₀*(H))/T₀
+    P_h = (T₀ + Lp₀*(H))/T₀
     P_h ^= faktor
+    P_h *= P₀
 
     return P_h
 end
@@ -329,32 +333,42 @@ end
 """
 --------------------------------------------------------------------
 Function to estimate the Pressure level from given Altitude.
-If Pressure level input is not given, then a Barometric Formula is
-used with reference level b=0. 
+
+USAGE:
+> altitude2pressure(H_in::Real)
+> altitude2pressure(H_in::Real; H_ref=[1,2,3,4], Pa_ref=[1000,900,850,820])
+
+INPUT:
+* H_in : Altitude for which pressure is calculated [m]
+* H_ref: (Optional) Vector with reference altitudes [m]
+* Pa_ref: (Optional) Vector same size as H_ref with reference Pressure
+
+OUTPUT:
+* Pa: Pressure corresponding to altitude H_in, same units as Pa_ref, if
+
+If reference Altitude (H_ref) and Pressure (Pa_ref) level are not given, then a Barometric Formula is used for the input altitude H_in and return in units of hPa. 
 See [Barometric Formula](https://en.wikipedia.org/wiki/Barometric_formula)
 
 
 """
-function altitude2pressure(H_in; H_ref=nothing, Pa_ref=nothing )
+function altitude2pressure(H_in::Real; H_ref=nothing, Pa_ref=nothing)
+    
+    if !(typeof(H_ref) <: AbstractVector) || !(typeof(Pa_ref) <: AbstractVector)
+	println("Using barometric formula as default")
 
-    if isnothing(H_ref) | isnothing(Pa_ref)
-        return barometric_formula(H_in)
+    elseif (extrema(H_ref) |>  x-> (x[1] ≤ H_in ≤ x[2]))
         
-    elseif typeof(H_ref) <: AbstractVector
-
-        i_1 = findlast(H_ref .< H_in)
-	isempty(i_1) && error("Given altitude not foundin reference!")
-	i_2 = findfirst(H_ref[i_1:end] .> H_in)
-
-        Pa = (Pa_ref[i_2] - Pa_ref[i_1])/(H_ref[i_2] - H_ref[i_1])*(H_in - H_ref[1])+Pa_ref[1]
-
-        return Pa
-    else
-        error("Please introduce H_ref and P_ref as ::Vector type!")
+	i_1 = findlast(H_ref .≤ H_in)
+        
+	i_2 = findfirst(H_ref[i_1:end] .≥ H_in)
+        
+	# interpolating Pa according the given referencs H_ref and Pa_ref:
+        return (Pa_ref[i_2] - Pa_ref[i_1])/(H_ref[i_2] - H_ref[i_1])*(H_in - H_ref[1])+Pa_ref[1]
     end
+	
+    # otherwise returning Pa from barometric formula 
+    return ATMOS.barometric_formula(H_in) 
 end
-
-
 # ----/
 
 # ***************************************************************************

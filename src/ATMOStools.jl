@@ -49,10 +49,10 @@ function getIVT(Pa::Matrix, U::Matrix, V::Matrix, QV::Matrix)
     IVT_u = vcat(IVT_u...)
     IVT_v = vcat(IVT_v...)
     IVT_vec = cat(IVT_u, IVT_v, dims=3)
-    IVT_vec /= gravity_0
+    IVT_vec /= g₀
     # calculating total IVT:
     IVT = sqrt.(IVT_u.^2 + IVT_v.^2)
-    IVT /= gravity_0
+    IVT /= g₀
     
     return IVT, IVT_vec
 end
@@ -93,45 +93,64 @@ end
 #
 """
 Function to estimate the Richardson Number
-N², Ri = Ri_N(height, WSPD, QV, θ)
+N², Ri = Ri_N(height, WSPD, QV, θ, T)
 
 INPUT: 
 * -> height: profile altitudes [m]
 * -> WSPD  : wind speed [m/s]
 * -> QV    : specific humidity [kg/m³]
 * -> θ     : potential temperature [K]
+* -> T     : ambient temperature [°C]
 OR
 * -> rs::Dict : Dictionary with Radiosonde or Model data
+OPTIONAL PARAMETERS:
+* Tₛ -> a vector of surface temperature [K] (default first layer or T)
+* Hₛ -> reference altitude [m] (default 0)
+* WSPDₛ -> wind speed at the reference altitude [m/s] (default 0)
+
  OUTPUT:
-* <- N2 : Vaisaala frequency [Hz]
+* <- N² : Brunt-Väisälä frequency [s⁻²]
 * <- Ri : The bulk Richardson Number [-]
 
 """
-function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix)
-    θv = VirtualTemperature(θ, QV)
-    Δθv = θv[2:end,:] .- θv[1,:]'  # K
-    ΔZ = height[2:end] .- height[1]  # m
-    ΔU = WSPD[2:end,:] .- WSPD[1,:]'  # m/s
-    N² = (Δθv./ΔZ)./θv[1:end-1,:]
-    N² *= gravity_0
-    # wind shear gradient:
-    Ri = N²./(ΔU./ΔZ).^2
+function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
+              Tₛ::Vector=[], Hₛ = 0, WSPDₛ = 0)
+
+    # calculating virtual potential temperatures:
+    θᵥ = VirtualTemperature(θ, QV)
+    VT_K = VirtualTemperature(T .+ 273.15, QV)
+
+    if isempty(Tₛ)
+        TVₛ_K = T[1,:] .+ 273.15       
+        θₛ = θᵥ[1,:]
+        
+    else
+        @assert length(Tₛ)==size(T, 2) error("Surface temperature Tₛ length does not match dim 2 of T")
+        
+        θₛ = VirtualTemperature(θ(Tₛ, P₀), QV[1,:])
+        TVₛ_K = VirtualTemperature(Tₛ, QV[1,:])
+    end
+    
+    Δθᵥ = θᵥ .- θₛ'   # θᵥ[1,:]'  # K
+    ΔZ = height .- Hₛ  # height[1]  # m
+    ΔU = WSPD .- WSPDₛ' # [1,:]'  # m/s
+    Tᵥ = similar(T)
+    Tᵥ[2:end, :] = 0.5(VT_K[1:end-1,:] .+ VT_K[2:end,:])
+    Tᵥ[1, :] = 0.5(VT_K[1,:] .+ TVₛ_K)
+
+    # calculating the Brunt-Väisälä frequency:
+    N² = (Δθᵥ.*ΔZ)./Tᵥ
+    N² *= g₀
+    
+    # calculating Richardson-number: N²/wind shear gradient:
+    Ri = N²./(ΔU).^2
+    
     return N², Ri
 end
+
 function Ri_N(rs::Dict)
-    #N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ])
-    height = 1f3*rs[:height]
-    WSPD = rs[:WSPD]
-    QV = rs[:qv]
-    θ = rs[:θ]
-    θv = VirtualTemperature(θ, QV)
-    Δθv = θv .- θv[1,:]'  # K
-    ΔZ = height #[2:end] .- height[1:end-1]  # m
-    ΔU = WSPD #[2:end, :] .- WSPD[1:end-1, :]  # m/s
-    N² = (Δθv.*ΔZ)./θv[1,:]'
-    N² *= gravity_0
-    # wind shear gradient:
-    Ri = N²./(ΔU).^2
+    N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ], rs[:T])
+
     return N², Ri
 end
 # ----/
@@ -179,7 +198,7 @@ Optional parameters are:
 * mxly = 4, maximum inversion layers to consider (default 4 layers)
 
 """
-function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.08, δT=0.5, mxly=3)
+function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.08, δT=0.5, mxly=4)
 
     m, nt = size(T)
     mxidx = findfirst(x-> x ≥ mxhg, H)
