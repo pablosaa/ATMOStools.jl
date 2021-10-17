@@ -209,11 +209,12 @@ function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.
     # calculating the gradient respect to height h
     δTz = ∇ₕT(T, H)
 
-    # defining dummy expression:
-    ex =:(δTz < 0)
     for tline ∈ (1:nt)
         idx_bot = Vector{Int32}()
         idx_top = Vector{Int32}()
+
+        # defining dummy expression:
+        ex =:(δTz < 0)
 
         for i ∈ (1:mxidx)
 	    ex.args[2] = δTz[i, tline]
@@ -231,7 +232,7 @@ function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.
 	    end
         end
 
-        # Checking if idx_bot and idx_top have same length:
+        # Checking if it failed to find top layer:
         ex.args[1] == :≥ && pop!(idx_bot)
         
         # Merging layers closer than 60m form top to bottom
