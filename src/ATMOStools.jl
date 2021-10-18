@@ -210,16 +210,20 @@ function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.
     δTz = ∇ₕT(T, H)
 
     for tline ∈ (1:nt)
+
+        all(isnan.(δTz[:, tline])) && continue
+        
         idx_bot = Vector{Int32}()
         idx_top = Vector{Int32}()
 
         # defining dummy expression:
         ex =:(δTz < 0)
-
+        
         for i ∈ (1:mxidx)
+
 	    ex.args[2] = δTz[i, tline]
 		
-	    if !eval(ex)
+	    if !isnan(δTz[i, tline]) && !eval(ex)
             
 	        if ex.args[1] == :<
 		    push!(idx_bot, i) #i-1
