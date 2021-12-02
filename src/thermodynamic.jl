@@ -235,27 +235,34 @@ end #function qv_to_rh
 """
 ! --------------------------------------------------------------------
 ! Function to convert kg/kg to kg/m^3
+! USAGE:
+! > RHOx = MassRatio2MassVolume(Qx::Matrix, T::Matrix, P::Matrix)
+! > RHOx = MassRatio2MassVolume(Qx::Number, T::Number, P::Number)
+! where:
 ! -> Qx  : Specific quantity e.g. humidity [kg/kg]
 ! -> T   : Temperature [K]
 ! -> P   : Pressure [hPa]
-! -> MIXR: vapour mixing ration [kg/kg]
 ! <- RHOx: Specific quantity [kg/m^3]
 ! ---
 """
-function MassRatio2MassVolume(Q_x, T, P ,MIXR)
+function MassRatio2MassVolume(Q_x, T, P)
   #real(kind=8), intent(in) :: Q_x, T, P, MIXR
   #real(kind=8) :: RHO_x
   # Local variables:
   # real(kind=8) :: Tv, RHO_air
 #  const Rd = 287  # [J/kg/K]
 #  const Rv = 461.5  # [J/kg/K]
-  
+  MIXR = qx_to_mixr(Q_x)
   Tv = VirtualTemperature(T, MIXR)
-  RHO_air = (1.0E2*P)/Tv/Rd  # [kg/m^3]
+  RHO_air = (1f2P)/Tv/Rd  # [kg/m^3]
   RHO_x   = Q_x*RHO_air      # [kg/m^3]
   
   return RHO_x
 end #function MassRatio2MassVolume
+function MassRatio2MassVolume(Q_x::Matrix, T::Matrix, P::Matrix)
+    
+    return MassRatio2MassVolume.(Q_x, T, P)
+end
 # ----/
 
 """
@@ -314,7 +321,7 @@ Pa = barometric_formula(H)
 
 where:
 H -> altitude in [m]
-Pa <- Pressure level in [Pa]
+Pa <- Pressure level in [hPa]
 
 """
 function barometric_formula(H::Number)
@@ -344,9 +351,10 @@ INPUT:
 * Pa_ref: (Optional) Vector same size as H_ref with reference Pressure
 
 OUTPUT:
-* Pa: Pressure corresponding to altitude H_in, same units as Pa_ref, if
-
-If reference Altitude (H_ref) and Pressure (Pa_ref) level are not given, then a Barometric Formula is used for the input altitude H_in and return in units of hPa. 
+* Pa: Pressure corresponding to altitude H_in, same units as Pa_ref but only
+if reference Altitude (H_ref) and Pressure (Pa_ref) levels are given.
+Otherwise the Barometric Formula is used for the input altitude H_in [in meters]
+ and return pressure in units of hPa. 
 See [Barometric Formula](https://en.wikipedia.org/wiki/Barometric_formula)
 
 

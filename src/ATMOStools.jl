@@ -8,6 +8,7 @@ ATMOStools a set of functions and constants useful for atmospheric physics and m
 """
 ATMOS
 
+include("boundary_layer.jl")
 include("thermodynamic.jl")
 # ******************************************************************
 # Calculating Integrated Water Vapour Transport
@@ -89,71 +90,83 @@ end
 # ---
 
 # ********************************************************************
-# Calculating Richardson Number
+# Function to calculate deltaIVT/deltaPa
 #
 """
-Function to estimate the Richardson Number
-N², Ri = Ri_N(height, WSPD, QV, θ, T)
-
-INPUT: 
-* -> height: profile altitudes [m]
-* -> WSPD  : wind speed [m/s]
-* -> QV    : specific humidity [kg/m³]
-* -> θ     : potential temperature [K]
-* -> T     : ambient temperature [°C]
-OR
-* -> rs::Dict : Dictionary with Radiosonde or Model data
-OPTIONAL PARAMETERS:
-* Tₛ -> a vector of surface temperature [K] (default first layer or T)
-* Hₛ -> reference altitude [m] (default 0)
-* WSPDₛ -> wind speed at the reference altitude [m/s] (default 0)
-
- OUTPUT:
-* <- N² : Brunt-Väisälä frequency [s⁻²]
-* <- Ri : The bulk Richardson Number [-]
+Function to return the derivative of IVT
+> δIVT = get_δIVT(P, WS, Qv)
+returns:
+  δIVT = -∇f * δP/g₀
+where:
+* ∇f = Qv * WS
+* P pressure in [hPa], WS in [m s⁻¹] and Qv [g/g]
 
 """
-function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
-              Tₛ::Vector=[], Hₛ = 0, WSPDₛ = 0)
-
-    # calculating virtual potential temperatures:
-    θᵥ = VirtualTemperature(θ, QV)
-    VT_K = VirtualTemperature(T .+ 273.15, QV)
-
-    if isempty(Tₛ)
-        TVₛ_K = T[1,:] .+ 273.15       
-        θₛ = θᵥ[1,:]
-        
-    else
-        @assert length(Tₛ)==size(T, 2) error("Surface temperature Tₛ length does not match dim 2 of T")
-        
-        θₛ = VirtualTemperature(θ(Tₛ, P₀), QV[1,:])
-        TVₛ_K = VirtualTemperature(Tₛ, QV[1,:])
+function get_δIVT(Pa::Matrix, WS::Matrix, Qv::Matrix)
+    ΔP = diff(Pa, dims=1)
+    ΔP *= 1f2 # [Pa]
+    qv_flux = let ∇f = Qv[1:end-1,:] .* WS[1:end-1,:]
+        -∇f.*ΔP/g₀
     end
-    
-    Δθᵥ = θᵥ .- θₛ'   # θᵥ[1,:]'  # K
-    ΔZ = height .- Hₛ  # height[1]  # m
-    ΔU = WSPD .- WSPDₛ' # [1,:]'  # m/s
-    Tᵥ = similar(T)
-    Tᵥ[2:end, :] = 0.5(VT_K[1:end-1,:] .+ VT_K[2:end,:])
-    Tᵥ[1, :] = 0.5(VT_K[1,:] .+ TVₛ_K)
-
-    # calculating the Brunt-Väisälä frequency:
-    N² = (Δθᵥ.*ΔZ)./Tᵥ
-    N² *= g₀
-    
-    # calculating Richardson-number: N²/wind shear gradient:
-    Ri = N²./(ΔU).^2
-    
-    return N², Ri
+    # [kg m⁻¹ s-¹]
+    return qv_flux
 end
-
-function Ri_N(rs::Dict)
-    N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ], rs[:T])
-
-    return N², Ri
+function get_δIVT(rs::Dict)
+    return get_δIVT(10rs[:Pa], rs[:WSPD], rs[:qv])
 end
 # ----/
+
+# *********************************************************************
+# Function to estimate the altitude of the maximum water vapour flux
+# profile
+#
+"""
+Function to estimate the altitude of the maximum water vapour flux.
+The estimation is based on the gradient of water vapour transport and is
+by default considered only the part of the atmospheric profile where the
+integrated water vapour reaches 50% and/or a below a pressure level (default 600hPa)
+
+USAGE:
+> H, idx_max, idx_wv50 = estimate_WVT_peak_altitude(rs::Dict, Pmax=500, get_index=true)
+> H = estimate_WVT_peak_altitude(rs::Dict, get_index=false)
+
+WHERE:
+* rs::Dict variable obtained from rs = ATMOS.getSondeData(sonde_file)
+* Pmax (Optional) maximum pressure level to consider, default= 600 hPa
+* get_index::Bool flag to output the indexes corresponding to max WVT and WV50%
+
+OUTPUT:
+* H::Vector altiudes of maximum water vapour flux (same units as rs[:height])
+* idx_max::Vector indexes of rs[:height] to produce H
+* idx_wv50::Vector indexes of rs[:heihgt] of 50% of IWV
+
+"""
+function estimate_WVT_peak_altitude(rs::Dict; Pmax= 600, get_index=true)
+    # estimate the altitude at which ∫qv reachs a half.
+    T_K = rs[:T].+237.15
+    P_hPa = 10rs[:Pa]
+    
+    ii_IWV50 = let ρ_wv = ATMOS.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
+        δH = diff([0; rs[:height]])    	
+	[filter(!isnan, Z_wv.*δH) |> WV->cumsum(WV)./sum(WV) |> x->findfirst(≥(0.5), x ) for Z_wv ∈ eachcol(ρ_wv)]
+    end
+
+    # estimate the index at which qv*WS get maximum below 1/2∫qv
+    ∇ₕWVT = let δH = diff(1f3rs[:height])
+	ATMOS.get_δIVT(rs)./δH
+    end
+
+    ii_wvt_max = [filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
+
+    H_wvt = rs[:height][ii_wvt_max]
+
+    get_index && (return H_wvt, ii_wvt_max, ii_IWV50)
+
+    return H_wvt
+        
+end
+# ----/
+
 
 # **********************************************************************
 # Calculating gradient of atmospheric profile
