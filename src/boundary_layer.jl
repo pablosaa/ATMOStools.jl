@@ -81,4 +81,52 @@ function estimate_Ri_PBLH(rs::Dict; thr_ri=0.25)
 end
 # ----/
 
+
+# **************************************************************************
+# Sub-routine to extract Wind Direction and Speed based on maximum water
+# vapour transport.
+function Extimate_windDir_WVT(INV::Dict, rs::Dict,
+                              CBH::Vector, Decop_H::Vector,
+                              H_wvt::Vector; ΔH = 0.15)
+
+    # ΔH is a +/- altitude from H_wvt in km
+    
+    # defining output variables:
+    wind_dir = Vector{Vector{Float64}}(undef, 0)
+    wind_range = Vector{Vector{Float64}}(undef, 0)
+    wind_spd = Vector{Vector{Float64}}(undef, 0)
+    
+    for tidx = eachindex(H_wvt)
+
+        # temperal variables for inversion:
+	Inv_bot = INV[:HEIGHT][:, tidx]
+	Inv_top = INV[:HEIGHT][:, tidx] .+ INV[:ΔHEIGHT][:, tidx]
+
+        # ii_wdinr are the Prodile indexes where H_wvt fits criterium:
+        # * decopling < Hwvt indexes [decopling : Hwvt or CBH] if Hwvt < CBH
+        # * decopling ≥ Hwvt indexes [Inv_bot : Hwvt] or Hwvt ± ΔH if Hwvt ∉ INV
+	ii_wdir = let HWVT = H_wvt[tidx] #δH = 0.1
+	    i1, i2 = if !isnan(Decop_H[tidx]) && (Decop_H[tidx] < HWVT)
+		(Decop_H[tidx], max(CBH[tidx], HWVT) )
+	    else
+		findfirst(Inv_bot .< HWVT .< Inv_top) |> x->!isnothing(x) ? (Inv_bot[x], HWVT) : HWVT .+ ΔH*[-1, 1]
+	    end
+
+	    # retrieving all Profile indexes within [i1, i2] above the first one
+            # to avoid effect of low atmosphere e.g. strong surface inversion:
+	    findall(i1 .≤ rs[:height] .≤ i2) |> x->filter!(>(1), x)
+	end
+
+	#feeding output variables:
+        # * Wind direction, Wind speed, Wind range normalized to 50km
+	push!(wind_dir, rs[:WDIR][ii_wdir, tidx])
+	push!(wind_spd, rs[:WSPD][ii_wdir, tidx])
+	dummy = let ws= rs[:WSPD][ii_wdir, tidx]
+	    R_lim*ws./maximum(ws)
+	end
+	push!(wind_range, dummy)
+    end
+
+    return wind_dir, wind_spd
+end
 # end of file
