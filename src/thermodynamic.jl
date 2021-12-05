@@ -375,7 +375,7 @@ function altitude2pressure(H_in::Real; H_ref=nothing, Pa_ref=nothing)
     end
 	
     # otherwise returning Pa from barometric formula 
-    return ATMOS.barometric_formula(H_in) 
+    return ATMOStools.barometric_formula(H_in) 
 end
 # ----/
 

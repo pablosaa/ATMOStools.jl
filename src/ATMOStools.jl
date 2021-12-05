@@ -1,4 +1,4 @@
-module ATMOS
+module ATMOStools
 
 using Printf
 
@@ -6,7 +6,7 @@ using Printf
 ATMOStools a set of functions and constants useful for atmospheric physics and meteorology.
 
 """
-ATMOS
+ATMOStools
 
 include("boundary_layer.jl")
 include("thermodynamic.jl")
@@ -131,7 +131,7 @@ USAGE:
 > H = estimate_WVT_peak_altitude(rs::Dict, get_index=false)
 
 WHERE:
-* rs::Dict variable obtained from rs = ATMOS.getSondeData(sonde_file)
+* rs::Dict variable obtained from rs = ATMOStools.getSondeData(sonde_file)
 * Pmax (Optional) maximum pressure level to consider, default= 600 hPa
 * get_index::Bool flag to output the indexes corresponding to max WVT and WV50%
 
@@ -146,14 +146,14 @@ function estimate_WVT_peak_altitude(rs::Dict; Pmax= 600, get_index=true)
     T_K = rs[:T].+237.15
     P_hPa = 10rs[:Pa]
     
-    ii_IWV50 = let ρ_wv = ATMOS.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
+    ii_IWV50 = let ρ_wv = ATMOStools.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
         δH = diff([0; rs[:height]])    	
 	[filter(!isnan, Z_wv.*δH) |> WV->cumsum(WV)./sum(WV) |> x->findfirst(≥(0.5), x ) for Z_wv ∈ eachcol(ρ_wv)]
     end
 
     # estimate the index at which qv*WS get maximum below 1/2∫qv
     ∇ₕWVT = let δH = diff(1f3rs[:height])
-	ATMOS.get_δIVT(rs)./δH
+	ATMOStools.get_δIVT(rs)./δH
     end
 
     ii_wvt_max = [filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];

@@ -76,7 +76,7 @@ function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; thr_ri=0.25)
 end
 # or
 function estimate_Ri_PBLH(rs::Dict; thr_ri=0.25)
-    N², Ri = ATMOS.Ri_N(rs);
+    N², Ri = ATMOStools.Ri_N(rs);
     return estimate_Ri_PBLH(Ri, rs[:height]; thr_ri = thr_ri)
 end
 # ----/
@@ -85,9 +85,9 @@ end
 # **************************************************************************
 # Sub-routine to extract Wind Direction and Speed based on maximum water
 # vapour transport.
-function Extimate_windDir_WVT(INV::Dict, rs::Dict,
+function Collect_WindDir_using_WVT(INV::Dict, rs::Dict,
                               CBH::Vector, Decop_H::Vector,
-                              H_wvt::Vector; ΔH = 0.15)
+                              H_wvt::Vector; ΔH = 0.15, R_lim=50f0)
 
     # ΔH is a +/- altitude from H_wvt in km
     
@@ -127,6 +127,6 @@ function Extimate_windDir_WVT(INV::Dict, rs::Dict,
 	push!(wind_range, dummy)
     end
 
-    return wind_dir, wind_spd
+    return wind_dir, wind_spd, wind_range
 end
 # end of file
