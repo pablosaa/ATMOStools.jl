@@ -156,9 +156,10 @@ function estimate_WVT_peak_altitude(rs::Dict; Pmax= 600, get_index=true)
 	ATMOStools.get_δIVT(rs)./δH
     end
 
-    ii_wvt_max = [filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
+    ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
 
-    H_wvt = rs[:height][ii_wvt_max]
+    
+    H_wvt = [k>0 ? rs[:height][k] : NaN for k ∈ ii_wvt_max]
 
     get_index && (return H_wvt, ii_wvt_max, ii_IWV50)
 
