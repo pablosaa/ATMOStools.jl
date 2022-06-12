@@ -8,22 +8,25 @@ ATMOStools a set of functions and constants useful for atmospheric physics and m
 """
 ATMOStools
 
+include("constants.jl")
 include("boundary_layer.jl")
 include("thermodynamic.jl")
-# ******************************************************************
-# Calculating Integrated Water Vapour Transport
-#
+#= ******************************************************************
+ Calculating Integrated Water Vapour Transport
+=#
 """
 Function to compute Integrated Water Vapour Transport
 
-IVT, IVT_vec = getIVT(Pa::Matrix, U::Matrix, V::Matrix, QV::Matrix)
-IVT, IVT_vec = getIVT(rs::Dict)
+IVT = calculate_IVT(Pa::Vector, Qv::Vector, WS::Vector; Pmax=300)
+IVT = calculate_IVT(Pa::Matrix, Qv::Matrix, WS::Matrix)
+IVT_U, IVT_V = calculate_IVT(Pa::Matrix, Qv::Matrix, (U=Wu::Matrix, V=Wv::Matrix))
+IVT = calculate_IVT(rs::Dict)
 
 INPUT:
 * -> Pa : Pressure [hPa]
-* -> U,V: Wind speed component u and v [m/s]
+* -> WS : Wind speed [m/s] or (U,V) components [m/s]
 * -> QV : specific humidity [g/g]
-
+* -> Pmax: Optional parameter for integration limit (Default 300hPa)
 or
 
 * -> rs::Dict : Dictionary with Radiosonde or Model data
@@ -32,6 +35,47 @@ OUTPUT:
 * <- IVT    : total Integrated Water Vapour Transport [kg/m/s]
 * <- IVT_vec: IVT by wind component separated (meridional, zonal)
 """
+function calculate_IVT(Pa::Vector, Qv::Vector, WS::Vector; Pmax=300)
+    ΔP = diff(Pa, dims=1) #Pa[2:end,:] - Pa[1:end-1,:]
+    ΔP *= 1f2 # [hPa -> Pa]
+    ϕ = @. Qv*WS
+    # finding z_top index for integration limit:
+    zₜ = min(findlast(≥(Pmax), Pa), size(ΔP, 1) )
+
+    IVT = sum(ϕ[1:zₜ].* ΔP[1:zₜ], dims=1)
+    IVT /= -g₀
+    
+    return IVT
+end
+function calculate_IVT(Pa::Matrix, Qv::Matrix, WS::Matrix; Pmax=300)
+
+    IVT = [calculate_IVT(Pa[:,i], Qv[:,i], WS[:,i], Pmax=Pmax) for i ∈ axes(Pa,2)]
+    IVT = reduce(hcat, IVT)
+    return IVT
+end
+function calculate_IVT(Pa::Matrix, Qv::Matrix, WS::NamedTuple{(:U, :V), <:Tuple{Matrix, Matrix}}, Pmax=300)
+    IVT_u = calculate_IVT(Pa, Qv, WS[:U], Pmax=Pmax)
+    IVT_v = calculate_IVT(Pa, Qv, WS[:V], Pmax=Pmax)
+
+    # calculating total IVT:
+    IVT = @. sqrt(IVT_u^2 + IVT_v^2)
+    return IVT
+end
+function calculate_IVT(rs::Dict)
+    !mapreduce(x->haskey(rs, x), &, [:Pa, :qv]) && error("Input missing keys :Pa or :qv")
+    
+    Wspd = if haskey(rs, :U) && haskey(rs, :V)
+        (U=rs[:U], V=rs[:V])
+    elseif haskey(rs, :WS)
+        rs[:WS]
+    else
+        error("Input Dictionary needs wind data as :WS or :U and :V keys")
+    end
+
+    IVT = calculate_IVT(rs[:Pa], rs[:qv], Wspd)
+    return IVT
+end
+    
 function getIVT(Pa::Matrix, U::Matrix, V::Matrix, QV::Matrix)
     
     ΔP = Pa[2:end,:] - Pa[1:end-1,:]
@@ -63,9 +107,9 @@ function getIVT(rs::Dict)
 end
 # ----/
 
-# ******************************************************************
-# Get Maximum IVT index and values
-#
+#= ******************************************************************
+   Get Maximum IVT index and values
+=#
 """
 Function to obtain the altitude of the maximum IVT from profile
 idx, IVTmax = getMaxIVT_θ(IVT::Matrix{Float64})
@@ -89,37 +133,47 @@ function getMaxIVT_θ(IVT::Matrix)
 end
 # ---
 
-# ********************************************************************
-# Function to calculate deltaIVT/deltaPa
-#
+#= ********************************************************************
+    Function to calculate deltaIVT/deltaPa
+=#
 """
 Function to return the derivative of IVT
-> δIVT = get_δIVT(P, WS, Qv)
+given that
+IVT = -1/g₀∫Qv*Ws*dP
+
+> δIVT = calculate_∇WVT(P, WS, Qv, H)
 returns:
-  δIVT = -∇f * δP/g₀
+  δIVT = -∇f/g₀
+
 where:
-* ∇f = Qv * WS
-* P pressure in [hPa], WS in [m s⁻¹] and Qv [g/g]
+* ∇f = ∂Φᵥ/∂z
+* ∂Φᵥ = (Qv*Ws)dP
+
+Note:
+P pressure in [hPa], WS in [m s⁻¹], Qv [g/g] and H [km]
 
 """
-function get_δIVT(Pa::Matrix, WS::Matrix, Qv::Matrix)
-    ΔP = diff(Pa, dims=1)
-    ΔP *= 1f2 # [Pa]
-    qv_flux = let ∇f = Qv[1:end-1,:] .* WS[1:end-1,:]
-        -∇f.*ΔP/g₀
+function calculate_∇WVT(Pa::Matrix, WS::Matrix, Qv::Matrix, H::Vector)
+    ΔP = 1f2diff(Pa, dims=1)  # [Pa]
+    
+    ∇Φ_qv = let Φᵥ = Qv.*WS
+    	Δz = 1f3diff(H) # [m]
+	∂zΦᵥ = (diff(Φᵥ, dims=1)./Δz).*ΔP .+ Φᵥ[1:end-1,:].*(ΔP./Δz)
+        -∂zΦᵥ/g₀
     end
-    # [kg m⁻¹ s-¹]
-    return qv_flux
+	
+    ∇Φ_qv *= 1f3   # [g m⁻² s-¹]
+    return ∇Φ_qv
 end
-function get_δIVT(rs::Dict)
-    return get_δIVT(10rs[:Pa], rs[:WSPD], rs[:qv])
+function calculate_∇WVT(rs::Dict)
+    return calculate_∇WVT(10rs[:Pa], rs[:WSPD], rs[:qv])
 end
 # ----/
 
-# *********************************************************************
-# Function to estimate the altitude of the maximum water vapour flux
-# profile
-#
+#= *********************************************************************
+   Function to estimate the altitude of the maximum water vapour flux
+   profile
+=#
 """
 Function to estimate the altitude of the maximum water vapour flux.
 The estimation is based on the gradient of water vapour transport and is
@@ -169,8 +223,9 @@ end
 # ----/
 
 
-# **********************************************************************
-# Calculating gradient of atmospheric profile
+#= **********************************************************************
+   Calculating gradient of atmospheric profile
+=#
 """
 Function to calculate the first gradient of a given variable respect of height
 δT = ∇ₕT(T::AbstractMatrix, h::Vector)
@@ -192,8 +247,9 @@ end
 # ----/
 
 
-# *********************************************************************
-# Capturing the inversion layers in a profile variable
+#= *********************************************************************
+   Capturing the inversion layers in a profile variable
+=#
 """
 Algorithm to estiamte the profile indexes for bottom and top of inversion
 layers within the atmosphere.
@@ -281,8 +337,9 @@ function estimate_inversion_layers(T::AbstractMatrix, H::Vector; mxhg=15, δH=0.
 end
 # ----/
 
-# **********************************************************************
-# extracting the inversion variables from the specified profiles
+#= **********************************************************************
+   extracting the inversion variables from the specified profiles
+=#
 """
 function to extract from atmospheric profile variables the bottom and
  the thickness of the inversion give the profile indeces obtained by
@@ -362,57 +419,3 @@ end
 # --
 end #module
 
-
-##v, nt = size(idx_bot)
-##
-##  # Variable type
-##  VarType = Matrix{Float32}(undef, nv, nt)
-##  
-##  # creating a set of variables to map the inversion variables:
-##  # e.g. :Pa will be mapped to :PA for bottom and top inversion and
-##  # to :ΔPA for strength
-##  varset = Dict( x =>
-##                 let tmp = uppercase(String(x))
-##                 (Symbol(tmp), Symbol(:Δ, tmp))
-##                 end
-##                 for x in vars)
-##  
-##  # converting output keys to uppercase symbols
-##  out = let tmp0 = @. uppercase(String(vars)) |> Symbol
-##      # for inversion base variables:
-##      tmp1 = Dict(x => VarType for x ∈ tmp0)
-##      
-##      # for inversin top - bottom differences variables:
-##      tmp2 = Dict(Symbol(:Δ, x) => VarType for x in tmp0)
-##
-##      # convining both set of variables:
-##      merge!(tmp1, tmp2)
-##      
-##      # Initializing all variables with NaN:
-##      foreach(x-> tmp1[x] .= NaN, keys(tmp1))
-##
-##      #returning variable:
-##      tmp1
-##  end
-##  
-##  # filling output variable with inversion estimations:
-##  foreach(vars) do X
-##      for i ∈ (1:nt)
-##          for j ∈ (1:nv)
-##              i_top = idx_top[j,i]
-##              i_bot = idx_bot[j,i]
-##
-##              i_bot<1 && continue
-##
-##              # for difference variables:
-##              out[varset[X][2]][j, i] = ndims(rs[X])==1 ? rs[X][i_top] .- rs[X][i_bot] : rs[X][i_top, i] .- rs[X][i_bot, i]
-##
-##              # for bottom variables:
-##              out[varset[X][1]][j, i] = ndims(rs[X])==1 ? rs[X][i_bot] : rs[X][i_bot, i]
-##
-##          end
-##      end
-##          
-##  end
-##
-##  return out
