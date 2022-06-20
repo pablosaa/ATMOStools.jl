@@ -47,15 +47,16 @@ function calculate_IVT(Pa::Vector, Qv::Vector, WS::Vector; Pmax=300)
     
     return IVT
 end
-function calculate_IVT(Pa::Vector, Qv::Vector, WS::NamedTuple{(:U, :V), <:Tuple{Vector, Vector}}, Pmax=300)
-    IVT_u = calculate_IVT(Pa, Qv, WS[:U], Pmax=Pmax)
-    IVT_v = calculate_IVT(Pa, Qv, WS[:V], Pmax=Pmax)
+function calculate_IVT(Pa::T, Qv::T, WS::NamedTuple{(:U, :V), <:Tuple{T,T}}, Pmax=300) where T<:Vector
+    
+    IVT_u = calculate_IVT(Pa, Qv, WS.U, Pmax=Pmax)
+    IVT_v = calculate_IVT(Pa, Qv, WS.V, Pmax=Pmax)
 
     # calculating total IVT:
     IVT = @. sqrt(IVT_u^2 + IVT_v^2)
     return IVT, IVT_u, IVT_v
 end
-function calculate_IVT(Pa::Matrix, Qv::Matrix, WS::Matrix; Pmax=300)
+function calculate_IVT(Pa::T, Qv::T, WS::T; Pmax=300) where T<:Matrix
 
     IVT = [calculate_IVT(Pa[:,i], Qv[:,i], WS[:,i], Pmax=Pmax) for i ∈ axes(Pa,2)]
     IVT = reduce(hcat, IVT)
@@ -65,7 +66,7 @@ function calculate_IVT(rs::Dict)
     !mapreduce(x->haskey(rs, x), &, [:Pa, :qv]) && error("Input missing keys :Pa or :qv")
     
     Wspd = if haskey(rs, :U) && haskey(rs, :V)
-        (:U=rs[:U], :V=rs[:V])
+        (U=rs[:U], V=rs[:V])
     elseif haskey(rs, :WS)
         rs[:WS]
     else
