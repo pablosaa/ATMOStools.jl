@@ -19,7 +19,7 @@ Function to compute Integrated Water Vapour Transport
 
 IVT = calculate_IVT(Pa::Vector, Qv::Vector, WS::Vector; Pmax=300)
 IVT = calculate_IVT(Pa::Matrix, Qv::Matrix, WS::Matrix)
-IVT_U, IVT_V = calculate_IVT(Pa::Matrix, Qv::Matrix, (U=Wu::Matrix, V=Wv::Matrix))
+IVT, IVT_U, IVT_V = calculate_IVT(Pa::T, Qv::T, (U=Wu::T, V=Wv::T)) where T<:Vector
 IVT = calculate_IVT(rs::Dict)
 
 INPUT:
@@ -42,10 +42,18 @@ function calculate_IVT(Pa::Vector, Qv::Vector, WS::Vector; Pmax=300)
     # finding z_top index for integration limit:
     zₜ = min(findlast(≥(Pmax), Pa), size(ΔP, 1) )
 
-    IVT = sum(ϕ[1:zₜ].* ΔP[1:zₜ], dims=1)
+    IVT = sum(ϕ[1:zₜ].* ΔP[1:zₜ])
     IVT /= -g₀
     
     return IVT
+end
+function calculate_IVT(Pa::Vector, Qv::Vector, WS::NamedTuple{(:U, :V), <:Tuple{Vector, Vector}}, Pmax=300)
+    IVT_u = calculate_IVT(Pa, Qv, WS[:U], Pmax=Pmax)
+    IVT_v = calculate_IVT(Pa, Qv, WS[:V], Pmax=Pmax)
+
+    # calculating total IVT:
+    IVT = @. sqrt(IVT_u^2 + IVT_v^2)
+    return IVT, IVT_u, IVT_v
 end
 function calculate_IVT(Pa::Matrix, Qv::Matrix, WS::Matrix; Pmax=300)
 
@@ -53,19 +61,11 @@ function calculate_IVT(Pa::Matrix, Qv::Matrix, WS::Matrix; Pmax=300)
     IVT = reduce(hcat, IVT)
     return IVT
 end
-function calculate_IVT(Pa::Matrix, Qv::Matrix, WS::NamedTuple{(:U, :V), <:Tuple{Matrix, Matrix}}, Pmax=300)
-    IVT_u = calculate_IVT(Pa, Qv, WS[:U], Pmax=Pmax)
-    IVT_v = calculate_IVT(Pa, Qv, WS[:V], Pmax=Pmax)
-
-    # calculating total IVT:
-    IVT = @. sqrt(IVT_u^2 + IVT_v^2)
-    return IVT
-end
 function calculate_IVT(rs::Dict)
     !mapreduce(x->haskey(rs, x), &, [:Pa, :qv]) && error("Input missing keys :Pa or :qv")
     
     Wspd = if haskey(rs, :U) && haskey(rs, :V)
-        (U=rs[:U], V=rs[:V])
+        (:U=rs[:U], :V=rs[:V])
     elseif haskey(rs, :WS)
         rs[:WS]
     else
@@ -75,63 +75,8 @@ function calculate_IVT(rs::Dict)
     IVT = calculate_IVT(rs[:Pa], rs[:qv], Wspd)
     return IVT
 end
-    
-function getIVT(Pa::Matrix, U::Matrix, V::Matrix, QV::Matrix)
-    
-    ΔP = Pa[2:end,:] - Pa[1:end-1,:]
-    ΔP *= 1f2 # [Pa]
-    tmp_u = QV .* U
-    tmp_v = QV .* V
-    z_top = 235  # index of the top layer to consider ≈ 306 hPa.
-    # calculating IVT components u and v:
-    IVT_u = map(1:z_top) do z
-        sum(tmp_u[z:z_top,:] .* ΔP[z:z_top,:], dims=1)
-    end
-    IVT_v = map(1:z_top) do z
-        sum(tmp_v[z:z_top,:] .* ΔP[z:z_top,:], dims=1)
-    end
-    
-    IVT_u = vcat(IVT_u...)
-    IVT_v = vcat(IVT_v...)
-    IVT_vec = cat(IVT_u, IVT_v, dims=3)
-    IVT_vec /= g₀
-    # calculating total IVT:
-    IVT = sqrt.(IVT_u.^2 + IVT_v.^2)
-    IVT /= g₀
-    
-    return IVT, IVT_vec
-end
-function getIVT(rs::Dict)
-    IVT, IVT_vec = getIVT(10f0*rs[:Pa], rs[:U], rs[:V], rs[:qv])
-    return IVT, IVT_vec
-end
-# ----/
+# -----/
 
-#= ******************************************************************
-   Get Maximum IVT index and values
-=#
-"""
-Function to obtain the altitude of the maximum IVT from profile
-idx, IVTmax = getMaxIVT_θ(IVT::Matrix{Float64})
-
-INPUT:
-* IVT::Matrix{Float64} -> 2D array with cumulative total IVT
-OUTPUT:
-* idx -> 1D Vector with the index of the maximum from IVT Matrix
-* IVTmax -> 1D Vector with maximum IVT
-"""
-function getMaxIVT_θ(IVT::Matrix)
-    
-    ii = argmax(IVT, dims=1)
-    # converting the CartesianIndexes ii from 2-D to 1-D :
-    ii = vcat(ii...)
-
-    # retrieving the max of IVT into a vector:
-    IVTmax = IVT[ii][:]
-    
-    return ii, IVTmax
-end
-# ---
 
 #= ********************************************************************
     Function to calculate deltaIVT/deltaPa
@@ -153,17 +98,22 @@ Note:
 P pressure in [hPa], WS in [m s⁻¹], Qv [g/g] and H [km]
 
 """
-function calculate_∇WVT(Pa::Matrix, WS::Matrix, Qv::Matrix, H::Vector)
-    ΔP = 1f2diff(Pa, dims=1)  # [Pa]
+function calculate_∇WVT(Pa::T, WS::T, Qv::T, H::T) where T<:Vector
+    ΔP = 1f2diff(Pa)  # [Pa]
     
     ∇Φ_qv = let Φᵥ = Qv.*WS
     	Δz = 1f3diff(H) # [m]
-	∂zΦᵥ = (diff(Φᵥ, dims=1)./Δz).*ΔP .+ Φᵥ[1:end-1,:].*(ΔP./Δz)
+	∂zΦᵥ = (diff(Φᵥ)./Δz).*ΔP .+ Φᵥ[1:end-1,:].*(ΔP./Δz)
         -∂zΦᵥ/g₀
     end
 	
     ∇Φ_qv *= 1f3   # [g m⁻² s-¹]
     return ∇Φ_qv
+end
+function calculate_∇WVT(Pa::Matrix, WS::Matrix, Qv::Matrix, H::Vector)
+    WVT=[calculate_∇WVT(Pa[:,i], WS[:,i], Qv[:,i], H) for in ∈ axes(Pa,2)]
+    WVT = reduce(hcat, WVT)
+    return WVT
 end
 function calculate_∇WVT(rs::Dict)
     return calculate_∇WVT(10rs[:Pa], rs[:WSPD], rs[:qv])
@@ -415,6 +365,68 @@ function get_inversion_variables(idx_bot, idx_top, rs::Dict; addvars=())
    
 end
 # ----/
+
+# ********************************************************************
+# ********************************************************************
+#  Old version for profile IVT:
+# ********************************************************************
+function getIVT(Pa::Matrix, U::Matrix, V::Matrix, QV::Matrix)
+    
+    ΔP = Pa[2:end,:] - Pa[1:end-1,:]
+    ΔP *= 1f2 # [Pa]
+    tmp_u = QV .* U
+    tmp_v = QV .* V
+    z_top = 235  # index of the top layer to consider ≈ 306 hPa.
+    # calculating IVT components u and v:
+    IVT_u = map(1:z_top) do z
+        sum(tmp_u[z:z_top,:] .* ΔP[z:z_top,:], dims=1)
+    end
+    IVT_v = map(1:z_top) do z
+        sum(tmp_v[z:z_top,:] .* ΔP[z:z_top,:], dims=1)
+    end
+    
+    IVT_u = vcat(IVT_u...)
+    IVT_v = vcat(IVT_v...)
+    IVT_vec = cat(IVT_u, IVT_v, dims=3)
+    IVT_vec /= g₀
+    # calculating total IVT:
+    IVT = sqrt.(IVT_u.^2 + IVT_v.^2)
+    IVT /= g₀
+    
+    return IVT, IVT_vec
+end
+function getIVT(rs::Dict)
+    IVT, IVT_vec = getIVT(10f0*rs[:Pa], rs[:U], rs[:V], rs[:qv])
+    return IVT, IVT_vec
+end
+# ----/
+
+#= ******************************************************************
+   Get Maximum IVT index and values
+=#
+"""
+Function to obtain the altitude of the maximum IVT from profile
+idx, IVTmax = getMaxIVT_θ(IVT::Matrix{Float64})
+
+INPUT:
+* IVT::Matrix{Float64} -> 2D array with cumulative total IVT
+OUTPUT:
+* idx -> 1D Vector with the index of the maximum from IVT Matrix
+* IVTmax -> 1D Vector with maximum IVT
+"""
+function getMaxIVT_θ(IVT::Matrix)
+    
+    ii = argmax(IVT, dims=1)
+    # converting the CartesianIndexes ii from 2-D to 1-D :
+    ii = vcat(ii...)
+
+    # retrieving the max of IVT into a vector:
+    IVTmax = IVT[ii][:]
+    
+    return ii, IVTmax
+end
+# ---
+
 
 # --
 end #module
