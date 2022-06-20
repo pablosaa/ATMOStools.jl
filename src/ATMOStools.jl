@@ -47,7 +47,7 @@ function calculate_IVT(Pa::Vector, Qv::Vector, WS::Vector; Pmax=300)
     
     return IVT
 end
-function calculate_IVT(Pa::T, Qv::T, WS::NamedTuple{(:U, :V), <:Tuple{T,T}}, Pmax=300) where T<:Vector
+function calculate_IVT(Pa::T, Qv::T, WS::NamedTuple{(:U, :V), <:Tuple{T,T}}; Pmax=300) where T<:Vector
     
     IVT_u = calculate_IVT(Pa, Qv, WS.U, Pmax=Pmax)
     IVT_v = calculate_IVT(Pa, Qv, WS.V, Pmax=Pmax)
@@ -62,7 +62,7 @@ function calculate_IVT(Pa::T, Qv::T, WS::T; Pmax=300) where T<:Matrix
     IVT = reduce(hcat, IVT)
     return IVT
 end
-function calculate_IVT(rs::Dict)
+function calculate_IVT(rs::Dict; Pmax=300)
     !mapreduce(x->haskey(rs, x), &, [:Pa, :qv]) && error("Input missing keys :Pa or :qv")
     
     Wspd = if haskey(rs, :U) && haskey(rs, :V)
@@ -73,7 +73,7 @@ function calculate_IVT(rs::Dict)
         error("Input Dictionary needs wind data as :WS or :U and :V keys")
     end
 
-    IVT = calculate_IVT(rs[:Pa], rs[:qv], Wspd)
+    IVT = calculate_IVT(rs[:Pa], rs[:qv], Wspd, Pmax=Pmax)
     return IVT
 end
 # -----/
@@ -94,6 +94,9 @@ returns:
 where:
 * ∇f = ∂Φᵥ/∂z
 * ∂Φᵥ = (Qv*Ws)dP
+
+output:
+ δIVT [g m⁻² s-¹]
 
 Note:
 P pressure in [hPa], WS in [m s⁻¹], Qv [g/g] and H [km]
@@ -117,7 +120,7 @@ function calculate_∇WVT(Pa::Matrix, WS::Matrix, Qv::Matrix, H::Vector)
     return WVT
 end
 function calculate_∇WVT(rs::Dict)
-    return calculate_∇WVT(10rs[:Pa], rs[:WSPD], rs[:qv])
+    return calculate_∇WVT(10rs[:Pa], rs[:WS], rs[:qv])
 end
 # ----/
 
