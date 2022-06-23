@@ -11,6 +11,7 @@ ATMOStools
 include("constants.jl")
 include("boundary_layer.jl")
 include("thermodynamic.jl")
+include("radiation.jl")
 #= ******************************************************************
  Calculating Integrated Water Vapour Transport
 =#
@@ -35,7 +36,7 @@ OUTPUT:
 * <- IVT    : total Integrated Water Vapour Transport [kg/m/s]
 * <- IVT_vec: IVT by wind component separated (meridional, zonal)
 """
-function calculate_IVT(Pa::Vector, Qv::Vector, WS::Vector; Pmax=300)
+function calculate_IVT(Pa::T, Qv::T, WS::T; Pmax=300) where T<:Vector
     ΔP = diff(Pa, dims=1) #Pa[2:end,:] - Pa[1:end-1,:]
     ΔP *= 1f2 # [hPa -> Pa]
     ϕ = @. Qv*WS

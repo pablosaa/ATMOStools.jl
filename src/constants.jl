@@ -32,3 +32,6 @@ const M_air =  0.0289644
 
 # R* = universal gas constant: 8.3144598 J/(mol·K)
 const R = 8.3144598
+
+# Stephan-Boltzman constant: W m⁻² K⁻⁴
+const σ = 5.670374419E−8
