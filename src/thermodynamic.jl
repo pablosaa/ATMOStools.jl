@@ -53,12 +53,13 @@ OUTPUT:
 function θ(T, P)
     return T*(P₀/P)^κ
 end
-function θ(T::Vector, P::Vector)::Vector
+function θ(T::Array, P::Array)::Array
     return θ.(T, P)
 end
-function θ(T::Matrix, P::Matrix)::Matrix
-    return θ.(T, P)
-end
+#function θ(T::Vector, P::Vector)::Vector
+#    return θ.(T, P)
+#end
+
 # ----/
 # ********************************************************************
 # Function Virtual Temperature
@@ -77,37 +78,23 @@ end
 ! See LICENSE
 ! ---
 """
-function VirtualTemperature(T, MIXR)
-    #real(kind=8), intent(in) :: T, MIXR
-    #real(kind=8) :: TV
-    #! ** local variables
-    TV = T*(1.0 + MIXR/ϵ )/(1.0 + MIXR)
+function VirtualTemperature(T::Real; MIXR::Real=NaN, qv::Real=NaN)
+
+    # if qv give, then convert it to mixing ratio:
+    mᵣ = if !isnan(MIXR)
+        MIXR
+    elseif !isnan(qv)
+        qx_to_mixr(qv)
+    else
+        (@error "Neither MIXR nor qv has been given!")
+    end
+    
+    TV = T*(1.0 + mᵣ/ϵ )/(1.0 + mᵣ)
 
     return TV
 end #function VirtualTemperature
-function VirtualTemperature(T::Matrix, MIXR::Matrix)
+function VirtualTemperature(T::Array, MIXR::Array)
     return VirtualTemperature.(T, MIXR)
-end
-# ----/
-
-# **********************************************************************
-# Alternative Function for Virtual Temperature
-"""
-Virtual Temperature:
-input:
-* T: Temperature [K]
-* qv: water vapour mixing ratio [g/g]
-output:
-* T_v: Virtual temperature [K]
-"""
-function T_v(T, qv)
-    # Function to compute the virtual Temperature
-    ϵ = 0.622
-    T_v = T*(1.0 + qv/ϵ)/(1.0 + qv)
-    return T_v
-end 
-function T_v(T::Matrix, qv::Matrix)::Matrix
-    return T_v.(T, qv)
 end
 # ----/
 
@@ -131,14 +118,14 @@ function Theta_virtual(T, P, qv)
     T_virtual = VirtualTemperature(T, qv)
     return θ(T_virtual, P)  
 end
-function Theta_virtual(T::Matrix, P::Matrix, qv::Matrix)::Matrix
+function Theta_virtual(T::Array, P::Array, qv::Array)::Array
     return Theta_virtual.(T, P, qv)
 end
 # ----/
 
 """
 ! -------------------------------------------------------------------
-! Function to convert Specific [kg/kg] to mixing rations [kg/kg].
+! Function to convert Specific [kg/kg] to mixing ratio [kg/kg].
 ! Input, Q_x  : Specific content in [kg/kg]
 ! Output, mixr : Mixing ratio in [kg/kg]
 ! ---
@@ -147,10 +134,27 @@ function qx_to_mixr(Q_x)
   
   return Q_x/(1.0 - Q_x)
 end #function qx_to_mixr
-function qx_to_mixr(Q_x::Matrix)::Matrix
+function qx_to_mixr(Q_x::Array)::Array
     return qx_to_mixr.(Q_x)
 end
 # ----/
+
+"""
+! -------------------------------------------------------------------
+! Function to convert mixing ratio [kg/kg] to Specific [kg/kg].
+! Input,  mixr : Mixing ratio in [kg/kg]
+! Output, Q_x  : Specific content in [kg/kg]
+! ---
+"""
+function mixr_to_qx(mixr)
+  
+    return mixr/(1.0 + mixr)
+end #function qx_to_mixr
+function mixr_to_qx(mixr::Array)::Array
+    return mixr_to_qx(mixr)
+end
+# ----/
+
 
 """
 ! -------------------------------------------------------------
@@ -259,7 +263,7 @@ function MassRatio2MassVolume(Q_x, T, P)
   
   return RHO_x
 end #function MassRatio2MassVolume
-function MassRatio2MassVolume(Q_x::Matrix, T::Matrix, P::Matrix)
+function MassRatio2MassVolume(Q_x::Array, T::Array, P::Array)
     
     return MassRatio2MassVolume.(Q_x, T, P)
 end
@@ -285,7 +289,7 @@ function dewpoint_to_rh(T, Td)
     RH = 100.0*CCE(Td)/CCE(T)
     return RH
 end
-function dewpoint_to_rh(T::Matrix, Td::Matrix)::Matrix
+function dewpoint_to_rh(T::Array, Td::Array)::Array
     return dewpoint_to_rh.(T, Td)
 end
 # ----/
@@ -306,7 +310,7 @@ function rh_to_mixr(RH, T, P)
     mixr = RH*B*Es/(100.0*P - RH*Es)
     return mixr
 end
-function rh_to_mixr(RH::Matrix, T::Matrix, P::Matrix)::Matrix
+function rh_to_mixr(RH::Array, T::Array, P::Array)::Array
     return rh_to_mixr.(RH, T, P)
 end
 # ----/
