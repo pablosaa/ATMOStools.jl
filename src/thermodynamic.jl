@@ -78,23 +78,18 @@ end
 ! See LICENSE
 ! ---
 """
-function VirtualTemperature(T::Real; MIXR::Real=NaN, qv::Real=NaN)
+function VirtualTemperature(T::Real, HU::Real; flag_mixr::Bool=true)
 
     # if qv give, then convert it to mixing ratio:
-    mᵣ = if !isnan(MIXR)
-        MIXR
-    elseif !isnan(qv)
-        qx_to_mixr(qv)
-    else
-        (@error "Neither MIXR nor qv has been given!")
-    end
+    mᵣ = flag_mixr ? HU : qx_to_mixr(HU)
     
     TV = T*(1.0 + mᵣ/ϵ )/(1.0 + mᵣ)
 
     return TV
-end #function VirtualTemperature
-function VirtualTemperature(T::Array, MIXR::Array)
-    return VirtualTemperature.(T, MIXR)
+end
+# or
+function VirtualTemperature(T::Array, HU::Array; flag_mixr::Bool=true)
+    return VirtualTemperature.(T, HU, flag_mixr=flag_mixr)
 end
 # ----/
 
@@ -115,9 +110,10 @@ Output:
 function Theta_virtual(T, P, qv)
     # Function to compute the virtual Potential Temperature:
     
-    T_virtual = VirtualTemperature(T, qv)
+    T_virtual = VirtualTemperature(T, qv, flag_mixr=false)
     return θ(T_virtual, P)  
 end
+# or
 function Theta_virtual(T::Array, P::Array, qv::Array)::Array
     return Theta_virtual.(T, P, qv)
 end

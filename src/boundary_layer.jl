@@ -32,8 +32,8 @@ function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
               Tₛ::Vector=[], Hₛ = 0, WSPDₛ = 0)
 
     # calculating virtual potential temperatures:
-    θᵥ = VirtualTemperature(θ, QV)
-    VT_K = VirtualTemperature(T .+ 273.15, QV)
+    θᵥ = VirtualTemperature(θ, QV, flag_mixr=false)
+    VT_K = VirtualTemperature(T .+ 273.15, QV, flag_mixr=false)
 
     if isempty(Tₛ)
         TVₛ_K = T[1,:] .+ 273.15       
@@ -42,8 +42,8 @@ function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
     else
         @assert length(Tₛ)==size(T, 2) error("Surface temperature Tₛ length does not match dim 2 of T")
         
-        θₛ = VirtualTemperature(θ(Tₛ, P₀), QV[1,:])
-        TVₛ_K = VirtualTemperature(Tₛ, QV[1,:])
+        θₛ = VirtualTemperature(θ(Tₛ, P₀), QV[1,:], flag_mixr=false)
+        TVₛ_K = VirtualTemperature(Tₛ, QV[1,:], flag_mixr=false)
     end
     
     Δθᵥ = θᵥ .- θₛ'   # θᵥ[1,:]'  # K
@@ -70,8 +70,8 @@ function Ri_N(rs::Dict)
 end
 # ----/
 
-function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; thr_ri=0.25)
-    PBLH = [findfirst(>(0.25), x) for x in eachcol(Ri)] |> x->height[x] ;
+function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25)
+    PBLH = [findfirst(>(ξ_ri), x) for x in eachcol(Ri)] |> x->height[x] ;
     return PBLH
 end
 # or
