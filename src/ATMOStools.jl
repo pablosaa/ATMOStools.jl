@@ -60,21 +60,21 @@ end
 function calculate_IVT(Pa::T, Qv::T, WS::T; Pmax=300) where T<:Matrix
 
     IVT = [calculate_IVT(Pa[:,i], Qv[:,i], WS[:,i], Pmax=Pmax) for i ∈ axes(Pa,2)]
-    IVT = reduce(hcat, IVT)
+    #IVT = reduce(hcat, IVT)
     return IVT
 end
 function calculate_IVT(rs::Dict; Pmax=300)
     !mapreduce(x->haskey(rs, x), &, [:Pa, :qv]) && error("Input missing keys :Pa or :qv")
     
-    Wspd = if haskey(rs, :U) && haskey(rs, :V)
+    Wspd = if haskey(rs, :WSPD)
+        rs[:WSPD]
+    elseif  haskey(rs, :U) && haskey(rs, :V)
         (U=rs[:U], V=rs[:V])
-    elseif haskey(rs, :WS)
-        rs[:WS]
     else
-        error("Input Dictionary needs wind data as :WS or :U and :V keys")
+        error("Input Dictionary needs wind data as :WS or :U and :V variables")
     end
 
-    IVT = calculate_IVT(rs[:Pa], rs[:qv], Wspd, Pmax=Pmax)
+    IVT = calculate_IVT(10rs[:Pa], rs[:qv], Wspd, Pmax=Pmax)
     return IVT
 end
 # -----/
@@ -103,7 +103,7 @@ Note:
 P pressure in [hPa], WS in [m s⁻¹], Qv [g/g] and H [km]
 
 """
-function calculate_∇WVT(Pa::T, WS::T, Qv::T, H::T) where T<:Vector
+function calculate_∇WVT(Pa::T, WS::T, Qv::T, H::Vector) where T<:Vector
     ΔP = 1f2diff(Pa)  # [Pa]
     
     ∇Φ_qv = let Φᵥ = Qv.*WS
@@ -116,12 +116,12 @@ function calculate_∇WVT(Pa::T, WS::T, Qv::T, H::T) where T<:Vector
     return ∇Φ_qv
 end
 function calculate_∇WVT(Pa::Matrix, WS::Matrix, Qv::Matrix, H::Vector)
-    WVT=[calculate_∇WVT(Pa[:,i], WS[:,i], Qv[:,i], H) for in ∈ axes(Pa,2)]
+    WVT=[calculate_∇WVT(Pa[:,i], WS[:,i], Qv[:,i], H) for i ∈ axes(Pa,2)]
     WVT = reduce(hcat, WVT)
     return WVT
 end
 function calculate_∇WVT(rs::Dict)
-    return calculate_∇WVT(10rs[:Pa], rs[:WS], rs[:qv])
+    return calculate_∇WVT(10rs[:Pa], rs[:WSPD], rs[:qv], rs[:height])
 end
 # ----/
 
@@ -150,20 +150,21 @@ OUTPUT:
 * idx_wv50::Vector indexes of rs[:heihgt] of 50% of IWV
 
 """
-function estimate_WVT_peak_altitude(rs::Dict; Pmax= 600, get_index=true)
+function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Pmax= 600, get_index=true)
     # estimate the altitude at which ∫qv reachs a half.
-    T_K = rs[:T].+237.15
+    T_K = rs[:T] .+ 237.15
     P_hPa = 10rs[:Pa]
     
     ii_IWV50 = let ρ_wv = ATMOStools.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
-        δH = diff([0; rs[:height]])    	
+        δH = diff([0; rs[:height]])
 	[filter(!isnan, Z_wv.*δH) |> WV->cumsum(WV)./sum(WV) |> x->findfirst(≥(0.5), x ) for Z_wv ∈ eachcol(ρ_wv)]
     end
 
     # estimate the index at which qv*WS get maximum below 1/2∫qv
-    ∇ₕWVT = let δH = diff(1f3rs[:height])
-	ATMOStools.get_δIVT(rs)./δH
-    end
+    ∇ₕWVT = isnothing(WVT) ? calculate_∇WVT(rs) : WVT
+    ##∇ₕWVT = let δH = diff(1f3rs[:height])
+    ##    ATMOStools.get_δIVT(rs)./δH
+    ##end
 
     ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
 
@@ -175,6 +176,7 @@ function estimate_WVT_peak_altitude(rs::Dict; Pmax= 600, get_index=true)
     return H_wvt
         
 end
+
 # ----/
 
 
