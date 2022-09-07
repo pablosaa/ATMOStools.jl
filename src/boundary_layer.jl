@@ -64,7 +64,9 @@ function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
 end
 
 function Ri_N(rs::Dict)
-    N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], rs[:θ], rs[:T])
+    θ_data = θ(rs[:T].+273.15, 10rs[:Pa])
+    
+    N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], θ_data, rs[:T])
 
     return N², Ri
 end
