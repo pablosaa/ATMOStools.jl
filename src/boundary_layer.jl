@@ -38,6 +38,7 @@ function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
     if isempty(Tₛ)
         TVₛ_K = T[1,:] .+ 273.15       
         θₛ = θᵥ[1,:]
+        WSPDₛ = WSPD[1,:]
         
     else
         @assert length(Tₛ)==size(T, 2) error("Surface temperature Tₛ length does not match dim 2 of T")
@@ -54,18 +55,18 @@ function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
     Tᵥ[1, :] = 0.5(VT_K[1,:] .+ TVₛ_K)
 
     # calculating the Brunt-Väisälä frequency:
-    N² = (Δθᵥ.*ΔZ)./Tᵥ
+    N² = @. Δθᵥ/ΔZ/Tᵥ
     N² *= g₀
     
     # calculating Richardson-number: N²/wind shear gradient:
-    Ri = N²./(ΔU).^2
+    Ri = @. N²/(ΔU/ΔZ)^2
     
     return N², Ri
 end
 
 function Ri_N(rs::Dict)
     θ_data = θ(rs[:T].+273.15, 10rs[:Pa])
-    
+    # by default rs[:height] is read from ARM data in km
     N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], θ_data, rs[:T])
 
     return N², Ri
@@ -77,9 +78,9 @@ function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25)
     return PBLH
 end
 # or
-function estimate_Ri_PBLH(rs::Dict; thr_ri=0.25)
+function estimate_Ri_PBLH(rs::Dict; ξ_ri=0.25)
     N², Ri = ATMOStools.Ri_N(rs);
-    return estimate_Ri_PBLH(Ri, rs[:height]; thr_ri = thr_ri)
+    return estimate_Ri_PBLH(Ri, rs[:height]; ξ_ri = ξ_ri)
 end
 # ----/
 
