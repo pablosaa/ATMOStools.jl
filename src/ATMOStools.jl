@@ -158,7 +158,7 @@ function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, get_ind
     T_K = rs[:T] .+ 237.15
     P_hPa = 10rs[:Pa]
 
-    Hmax = if isnohting(Hmax)
+    Hmax = if isnothing(Hmax)
         Hmax
     elseif typeof(Hmax)<:Real
         Hmax = fill(Hmax, size(rs[:Pa] ,2))
