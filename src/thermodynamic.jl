@@ -362,7 +362,7 @@ See [Barometric Formula](https://en.wikipedia.org/wiki/Barometric_formula)
 function altitude2pressure(H_in::Real; H_ref=nothing, Pa_ref=nothing)
     
     if !(typeof(H_ref) <: AbstractVector) || !(typeof(Pa_ref) <: AbstractVector)
-	println("Using barometric formula as default")
+	@warn "Using barometric formula as default"
 
     elseif (extrema(H_ref) |>  x-> (x[1] ≤ H_in ≤ x[2]))
         
@@ -372,6 +372,8 @@ function altitude2pressure(H_in::Real; H_ref=nothing, Pa_ref=nothing)
         
 	# interpolating Pa according the given referencs H_ref and Pa_ref:
         return (Pa_ref[i_2] - Pa_ref[i_1])/(H_ref[i_2] - H_ref[i_1])*(H_in - H_ref[1])+Pa_ref[1]
+    else
+        @error "$(H_in) lays outside the bounds of H_ref!"
     end
 	
     # otherwise returning Pa from barometric formula 

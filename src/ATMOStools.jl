@@ -150,28 +150,56 @@ OUTPUT:
 * idx_wv50::Vector indexes of rs[:heihgt] of 50% of IWV
 
 """
-function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Pmax= 600, get_index=true)
+#function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Pmax= 600, get_index=true)
+function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, get_index=true, skipsurface=true)
+
+    
     # estimate the altitude at which ∫qv reachs a half.
     T_K = rs[:T] .+ 237.15
     P_hPa = 10rs[:Pa]
-    
-    ii_IWV50 = let ρ_wv = ATMOStools.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
-        δH = diff([0; rs[:height]])
-	[filter(!isnan, Z_wv.*δH) |> WV->cumsum(WV)./sum(WV) |> x->findfirst(≥(0.5), x ) for Z_wv ∈ eachcol(ρ_wv)]
+
+    Hmax = if isnohting(Hmax)
+        Hmax
+    elseif typeof(Hmax)<:Real
+        Hmax = fill(Hmax, size(rs[:Pa] ,2))
+    elseif typeof(Hmax)<:Vector
+        length(Hmax) != length(rs[:time]) && @warn "Hmax needs to be same length of rs[:time]"
+    else
+        @warn "Hmax needs to be a scalar or vector"
     end
 
-    # estimate the index at which qv*WS get maximum below 1/2∫qv
+    # estimating pressure level at maximum given Height, if Hmax not given then by default Pmax=600 [hPa]
+    Pmax = if isnothing(Hmax)
+        fill(600, size(rs[:Pa], 2))
+    else
+        [altitude2pressure(H_in, H_ref=rs[:height], Pa_ref=P_hPa[:, j]) for (j, H_in) ∈ enumerate(Hmax)]
+    end
+
+    ii_Pmax = [findlast(≥(P_in), P_hPa[:,i]) for (j, P_in) ∈ enumerate(Pmax)]
+    
+    ##(old stuff) ii_IWV50 = let ρ_wv = ATMOStools.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
+    ##    δH = diff([0; rs[:height]])
+    ##    [filter(!isnan, Z_wv.*δH) |> WV->cumsum(WV)./sum(WV) |> x->findfirst(≥(0.5), x ) for Z_wv ∈ eachcol(ρ_wv)]
+    ##end
+
+
+    # if not given as input, calculate the gradient of water vapour transport:
     ∇ₕWVT = isnothing(WVT) ? calculate_∇WVT(rs) : WVT
     ##∇ₕWVT = let δH = diff(1f3rs[:height])
     ##    ATMOStools.get_δIVT(rs)./δH
     ##end
 
-    ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
+    #(old stuff) ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
 
+    # estimate the index at which qv*WS get maximum below Pmax:
+    # if optional input variable "skipsurface=true" then only considers profiles from second layer:
+    i0 = skipsurface ? 2 : 1
+    
+    ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[i0:k]) |> argmax (fx, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmax)]
     
     H_wvt = [k>0 ? rs[:height][k] : NaN for k ∈ ii_wvt_max]
 
-    get_index && (return H_wvt, ii_wvt_max, ii_IWV50)
+    get_index && (return H_wvt, ii_wvt_max, ii_Pmax) ## ii_IWV50)
 
     return H_wvt
         
