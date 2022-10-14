@@ -132,38 +132,39 @@ end
 """
 Function to estimate the altitude of the maximum water vapour flux.
 The estimation is based on the gradient of water vapour transport and is
-by default considered only the part of the atmospheric profile where the
-integrated water vapour reaches 50% and/or a below a pressure level (default 600hPa)
+by default considered only the part of the atmospheric profile below 600hPa (top).
 
 USAGE:
-> H, idx_max, idx_wv50 = estimate_WVT_peak_altitude(rs::Dict, Pmax=500, get_index=true)
-> H = estimate_WVT_peak_altitude(rs::Dict, get_index=false)
+> H, idx_max, idx_top = estimate_WVT_peak_altitude(rs::Dict, Hmax=8f3, get_index=true)
+> H = estimate_WVT_peak_altitude(rs::Dict, get_index=false, skipsurface=false)
+> H = estimate_WVT_peak_altitude(rs::Dict, WVT=∇WVT, get_index=false, skipsurface=false)
 
 WHERE:
-* rs::Dict variable obtained from rs = ATMOStools.getSondeData(sonde_file)
-* Pmax (Optional) maximum pressure level to consider, default= 600 hPa
-* get_index::Bool flag to output the indexes corresponding to max WVT and WV50%
+* rs::Dict variable obtained from rs = ATMOStools.getSondeData(sonde_file),
+Optional inputs:
+* WVT::Matrix the vertical gradient of water vapour transport (default compute from rs)
+* Hmax::Real or Hmax::Vector, top height [m], default height Hmax at 600 hPa,
+* get_index::Bool flag to output the indexes for max WVT and Hmax (default false).
 
 OUTPUT:
-* H::Vector altiudes of maximum water vapour flux (same units as rs[:height])
+* H::Vector altitudes of maximum WVT flux below Hmax (same units as rs[:height])
 * idx_max::Vector indexes of rs[:height] to produce H
-* idx_wv50::Vector indexes of rs[:heihgt] of 50% of IWV
+* idx_top::Vector indexes of rs corresponding to Hmax::Vector
 
 """
-#function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Pmax= 600, get_index=true)
-function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, get_index=true, skipsurface=true)
-
+function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, get_index=false, skipsurface=true)
     
-    # estimate the altitude at which ∫qv reachs a half.
-    T_K = rs[:T] .+ 237.15
-    P_hPa = 10rs[:Pa]
+    # checking input variables:
+    P_hPa = 10rs[:Pa]  # kPa => hPa
 
+    # defining Hmax depending on input:
     Hmax = if isnothing(Hmax)
         Hmax
     elseif typeof(Hmax)<:Real
         Hmax = fill(Hmax, size(rs[:Pa] ,2))
     elseif typeof(Hmax)<:Vector
         length(Hmax) != length(rs[:time]) && @warn "Hmax needs to be same length of rs[:time]"
+        Hmax
     else
         @warn "Hmax needs to be a scalar or vector"
     end
@@ -175,27 +176,14 @@ function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, get_ind
         [altitude2pressure(H_in, H_ref=rs[:height], Pa_ref=P_hPa[:, j]) for (j, H_in) ∈ enumerate(Hmax)]
     end
 
-    ii_Pmax = [findlast(≥(P_in), P_hPa[:,i]) for (j, P_in) ∈ enumerate(Pmax)]
+    ii_Pmax = [findlast(≥(P_in), P_hPa[:,j]) for (j, P_in) ∈ enumerate(Pmax)]
     
-    ##(old stuff) ii_IWV50 = let ρ_wv = ATMOStools.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
-    ##    δH = diff([0; rs[:height]])
-    ##    [filter(!isnan, Z_wv.*δH) |> WV->cumsum(WV)./sum(WV) |> x->findfirst(≥(0.5), x ) for Z_wv ∈ eachcol(ρ_wv)]
-    ##end
-
-
     # if not given as input, calculate the gradient of water vapour transport:
     ∇ₕWVT = isnothing(WVT) ? calculate_∇WVT(rs) : WVT
-    ##∇ₕWVT = let δH = diff(1f3rs[:height])
-    ##    ATMOStools.get_δIVT(rs)./δH
-    ##end
-
-    #(old stuff) ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
-
-    # estimate the index at which qv*WS get maximum below Pmax:
-    # if optional input variable "skipsurface=true" then only considers profiles from second layer:
     i0 = skipsurface ? 2 : 1
     
-    ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[i0:k]) |> argmax (fx, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmax)]
+    ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[i0:k]) |> argmax for (fx, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmax)]
+    ii_wvt_max .+= i0
     
     H_wvt = [k>0 ? rs[:height][k] : NaN for k ∈ ii_wvt_max]
 
@@ -204,6 +192,21 @@ function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, get_ind
     return H_wvt
         
 end
+#function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Pmax= 600, get_index=true)
+
+    ##∇ₕWVT = let δH = diff(1f3rs[:height])
+    ##    ATMOStools.get_δIVT(rs)./δH
+    ##end
+
+    ##(old stuff) ii_IWV50 = let ρ_wv = ATMOStools.MassRatio2MassVolume.(rs[:qv], T_K, P_hPa)
+    ##    δH = diff([0; rs[:height]])
+    ##    [filter(!isnan, Z_wv.*δH) |> WV->cumsum(WV)./sum(WV) |> x->findfirst(≥(0.5), x ) for Z_wv ∈ eachcol(ρ_wv)]
+    ##end
+
+    #(old stuff) ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[findall(Pa.≥ max(Pmax, Pa[k]))]) |> argmax for (fx,Pa,k) ∈ zip(eachcol(∇ₕWVT), eachcol(P_hPa), ii_IWV50)];
+
+    # estimate the index at which qv*WS get maximum below Pmax:
+    # if optional input variable "skipsurface=true" then only considers profiles from second layer:
 
 # ----/
 

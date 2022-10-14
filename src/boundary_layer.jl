@@ -73,6 +73,25 @@ function Ri_N(rs::Dict)
 end
 # ----/
 
+
+"""
+Function to estimate the Planetary boundary layer height from bulk Ri
+
+USAGE:
+> PBLH = estimate_Ri_PBLH(Ri::Matrix, height::Vector)
+> PBLH = estimate_Ri_PBLH(Ri::Matrix, height::Vector; ξ_ri=0.11)
+> PBLH = estimate_Ri_PBLH(rs::Dict; ξ_ri=0.08)
+
+WHERE:
+* Ri::Matrix is the bulk Richardson Number (height, time)
+* height::Vector the altitude corresponding to Ri 1st dimension (height)
+* rs::Dict Radiosonde data readed by ARMtools
+Optional variables:
+* ξ_ri::Real Threshold of Ri to consider BLH (default 0.25)
+
+OUTPUT:
+* PBLH:Vector Boundary layer height, same units of height or rs[:height]
+"""
 function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25)
     PBLH = [findfirst(>(ξ_ri), x) for x in eachcol(Ri)] |> x->height[x] ;
     return PBLH
