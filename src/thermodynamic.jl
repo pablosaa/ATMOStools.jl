@@ -64,19 +64,20 @@ end
 # ********************************************************************
 # Function Virtual Temperature
 """
-! ____________________________________________________________________
-! Subroutine to calculate the Virtual Temperature given T, MIXR
-!
-! --------------------------------------------------------------------
-! Function convert Temperature to Virtual Temp.
-! -> T    : Temperature [K]
-! -> MIXR : Vapour Mixing ratio [kg/kg]
-! <- Tv   : Virtual Temperature [K]
-! ---
-! (c) 2020, Pablo Saavedra G.
-! Geophysical Institute, University of Bergen
-! See LICENSE
-! ---
+ ____________________________________________________________________
+ Subroutine to calculate the Virtual Temperature given T, MIXR
+
+ --------------------------------------------------------------------
+ Function convert Temperature to Virtual Temp.
+ * -> T    : Temperature [K]
+ * -> MIXR : Vapour Mixing ratio [kg/kg]
+ * <- Tv   : Virtual Temperature [K]
+
+ ---
+ (c) 2020, Pablo Saavedra G.
+ Geophysical Institute, University of Bergen
+ See LICENSE
+ ---
 """
 function VirtualTemperature(T::Real, HU::Real; flag_mixr::Bool=true)
 

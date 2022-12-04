@@ -152,42 +152,87 @@ OUTPUT:
 * idx_top::Vector indexes of rs corresponding to Hmax::Vector
 
 """
-function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, get_index=false, skipsurface=true)
+function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, Hmin=nothing, get_index=false, skipsurface=true)
     
     # checking input variables:
     P_hPa = 10rs[:Pa]  # kPa => hPa
 
-    # defining Hmax depending on input:
-    Hmax = if isnothing(Hmax)
-        Hmax
-    elseif typeof(Hmax)<:Real
-        Hmax = fill(Hmax, size(rs[:Pa] ,2))
-    elseif typeof(Hmax)<:Vector
-        length(Hmax) != length(rs[:time]) && @warn "Hmax needs to be same length of rs[:time]"
-        Hmax
-    else
-        @warn "Hmax needs to be a scalar or vector"
+    function get_Hxx(Hi, Hdefault)
+	Hout = if isnothing(Hi)
+	    fill(Hdefault, length(rs[:time]))
+	elseif typeof(Hi)<:Real
+	    fill(Hi, length(rs[:time]))
+	elseif typeof(Hi)<:Vector
+	    length(Hi) != length(rs[:time]) && @warn "When Vector, Hmin/Hmax needsto be same length as rs[:time]"
+	    Hi
+	else
+	    @warn "When given Hmin or Hmax, needs to be scalar or Vector"
+	end
     end
+	
+    Hmin = get_Hxx(Hmin, 0)
+    
+    Hmax = get_Hxx(Hmax, 8000)
 
-    # estimating pressure level at maximum given Height, if Hmax not given then by default Pmax=600 [hPa]
-    Pmax = if isnothing(Hmax)
-        fill(600, size(rs[:Pa], 2))
-    else
-        [altitude2pressure(H_in, H_ref=rs[:height], Pa_ref=P_hPa[:, j]) for (j, H_in) ∈ enumerate(Hmax)]
-    end
+    # if optional input variable "skipsurface=true" then only considers profiles from second layer:
+    i0 = skipsurface ? 2 : 1
+    
+    #### defining Hmax depending on input:
+    ###Hmax = if isnothing(Hmax)
+    ###    Hmax
+    ###elseif typeof(Hmax)<:Real
+    ###    Hmax = fill(Hmax, size(rs[:Pa] ,2))
+    ###elseif typeof(Hmax)<:Vector
+    ###    length(Hmax) != length(rs[:time]) && @warn "Hmax needs to be same length of rs[:time]"
+    ###    Hmax
+    ###else
+    ###    @warn "Hmax needs to be a scalar or vector"
+    ###end
 
-    ii_Pmax = [findlast(≥(P_in), P_hPa[:,j]) for (j, P_in) ∈ enumerate(Pmax)]
+    
+    #### estimating pressure level at maximum given Height, if Hmax not given then by default Pmax=600 [hPa]
+    ###Pmax = if isnothing(Hmax)
+    ###    fill(600, size(rs[:Pa], 2))
+    ###else
+    ###    [altitude2pressure(H_in, H_ref=rs[:height], Pa_ref=P_hPa[:, j]) for (j, H_in) ∈ enumerate(Hmax)]
+    ###end
+
+    ###ii_Pmax = [findlast(≥(P_in), P_hPa[:,j]) for (j, P_in) ∈ enumerate(Pmax)]
+
+    ii_Pmax = [findlast(≤(H_in), rs[:height]) for H_in ∈ Hmax]
+
+    ii_Pmin = [findfirst(>(H_in), rs[:height]) for H_in ∈ Hmin]
     
     # if not given as input, calculate the gradient of water vapour transport:
     ∇ₕWVT = isnothing(WVT) ? calculate_∇WVT(rs) : WVT
-    i0 = skipsurface ? 2 : 1
+
+    # getting the lowest WVT below Hmax as starting point to search for maximum:
+    tt = [let imin = ii_Pmin[j]
+	      tmp = ∇ₕWVT[imin+1:imax, j] .-∇ₕWVT[imin:imax-1, j]
+	      findlast(≤(-0.1), tmp) |> x-> (isnothing(x) || x<imin) ? imax : x
+	  end	for (j, imax) in enumerate(ii_Pmax)]
     
-    ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[i0:k]) |> argmax for (fx, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmax)]
-    ii_wvt_max .+= i0
-    
+    # estimate the index at which qv*WS get maximum below Pmax:    
+    ii_wvt_max = [let profx = fx[i0:k]
+		      profx[isnan.(profx)] .= -9999
+		      try
+		          isnothing(k) ? 0 : argmax(profx)
+		      catch
+			  @error "$(i0) ; $k ; $(profx)"
+		      end
+	          end
+	          for (fx, i0, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmin, tt)]
+
+    ii_wvt_max .+= ii_Pmin .-1
+
     H_wvt = [k>0 ? rs[:height][k] : NaN for k ∈ ii_wvt_max]
 
-    get_index && (return H_wvt, ii_wvt_max, ii_Pmax) ## ii_IWV50)
+    ii_Pmax .+= ii_Pmin .-1
+    
+    ###ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[i0:k]) |> argmax for (fx, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmax)]
+    ###ii_wvt_max .+= i0
+    
+    get_index && (return H_wvt, ii_wvt_max, ii_Pmax)
 
     return H_wvt
         

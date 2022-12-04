@@ -12,8 +12,8 @@ N², Ri = Ri_N(height, WSPD, QV, θ, T)
 
 INPUT: 
 * -> height: profile altitudes [m]
-* -> WSPD  : wind speed [m/s]
-* -> QV    : specific humidity [kg/m³]
+* -> U,V   : wind speed componetns U,V [m/s]
+* -> QV    : specific humidity [kg/kg]
 * -> θ     : potential temperature [K]
 * -> T     : ambient temperature [°C]
 OR
@@ -28,46 +28,43 @@ OPTIONAL PARAMETERS:
 * <- Ri : The bulk Richardson Number [-]
 
 """
-function Ri_N(height::Vector, WSPD::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
-              Tₛ::Vector=[], Hₛ = 0, WSPDₛ = 0)
+function Ri_N(height::Vector, U::Matrix, V::Matrix, QV::Matrix, θ::Matrix, T::Matrix;
+              Tₛ::Vector=[], Hₛ = 0, Uₛ = 0, Vₛ=0, flag_mixr=false)
 
     # calculating virtual potential temperatures:
-    θᵥ = VirtualTemperature(θ, QV, flag_mixr=false)
-    VT_K = VirtualTemperature(T .+ 273.15, QV, flag_mixr=false)
+    θᵥ = VirtualTemperature(θ, QV, flag_mixr=flag_mixr)
 
     if isempty(Tₛ)
         TVₛ_K = T[1,:] .+ 273.15       
         θₛ = θᵥ[1,:]
-        WSPDₛ = WSPD[1,:]
-        
+        Uₛ = 0.0 #U[1,:]
+        Vₛ = 0.0 #V[1,:]
     else
         @assert length(Tₛ)==size(T, 2) error("Surface temperature Tₛ length does not match dim 2 of T")
         
-        θₛ = VirtualTemperature(θ(Tₛ, P₀), QV[1,:], flag_mixr=false)
-        TVₛ_K = VirtualTemperature(Tₛ, QV[1,:], flag_mixr=false)
+        θₛ = VirtualTemperature(θ(Tₛ, P₀), QV[1,:], flag_mixr=flag_mixr)
     end
     
     Δθᵥ = θᵥ .- θₛ'   # θᵥ[1,:]'  # K
     ΔZ = height .- Hₛ  # height[1]  # m
-    ΔU = WSPD .- WSPDₛ' # [1,:]'  # m/s
-    Tᵥ = similar(T)
-    Tᵥ[2:end, :] = 0.5(VT_K[1:end-1,:] .+ VT_K[2:end,:])
-    Tᵥ[1, :] = 0.5(VT_K[1,:] .+ TVₛ_K)
-
+    ΔU = U .- Uₛ' # [1,:]'  # m/s
+    ΔV = V .- Vₛ'
+    
     # calculating the Brunt-Väisälä frequency:
-    N² = @. Δθᵥ/ΔZ/Tᵥ
+    N² = @. Δθᵥ/ΔZ/θᵥ
     N² *= g₀
     
     # calculating Richardson-number: N²/wind shear gradient:
-    Ri = @. N²/(ΔU/ΔZ)^2
+    Ri = @. N²/((ΔU/ΔZ)^2 + (ΔV/ΔZ)^2)
     
     return N², Ri
 end
-
+# When function called from RS, calculate θ and mixing ratio from radiosonde data:
 function Ri_N(rs::Dict)
     θ_data = θ(rs[:T].+273.15, 10rs[:Pa])
+    mixr = qx_to_mixr(rs[:qv])
     # by default rs[:height] is read from ARM data in km
-    N², Ri = Ri_N(1f3*rs[:height], rs[:WSPD], rs[:qv], θ_data, rs[:T])
+    N², Ri = Ri_N(1f3*rs[:height], rs[:U], rs[:V], mixr, θ_data, rs[:T], flag_mixr=true)
 
     return N², Ri
 end
@@ -92,14 +89,52 @@ Optional variables:
 OUTPUT:
 * PBLH:Vector Boundary layer height, same units of height or rs[:height]
 """
-function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25)
-    PBLH = [findfirst(>(ξ_ri), x) for x in eachcol(Ri)] |> x->height[x] ;
+function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25, i0=1)
+    PBLH = [findfirst(>(ξ_ri), x) for x in eachcol(Ri[i0:end, :])] |> x->height[x.+i0.-1]
     return PBLH
 end
 # or
-function estimate_Ri_PBLH(rs::Dict; ξ_ri=0.25)
+function estimate_Ri_PBLH(rs::Dict; ξ_ri=0.25, i0=1)
     N², Ri = ATMOStools.Ri_N(rs);
-    return estimate_Ri_PBLH(Ri, rs[:height]; ξ_ri = ξ_ri)
+    return estimate_Ri_PBLH(Ri, rs[:height]; ξ_ri = ξ_ri, i0=i0)
+end
+# ----/
+
+# ***************************************************************************
+"""
+Function to find the height for the mixing layer below cloud base.
+
+USAGE:
+
+CMLH = cloud_decoupling_height(height, CBH, θᵥ)
+CMLH = cloud_decoupling_height(height, CBH, θᵥ; θ_thr=0.2)
+
+WHERE:
+* height::Vector with the profile altitudes,
+* CBH::Vector with the information of the cloud base height to consider,
+* θᵥ::Matrix with the potential temperature (or virtual θ) to use for the estimation
+OPTIONAL:
+* θ_thr=0.25 threshold for the cummulative variance to consider (default 0.25 K²).
+OUTPUT:
+* CMLH::Vector cloud mixing layer height a.g.l., same units as height.
+
+"""
+function cloud_decoupling_height(rs_height::Vector, CBH::Vector, θᵥ::Matrix; θ_thr=0.25)	
+	# aux function to estimate cumulative sum:
+	Σₖ(x::Vector) = cumsum(x)./(1:length(x))
+	decop_hgt = fill(NaN32, length(CBH))
+	
+	for (k, θp) in enumerate(eachcol(θᵥ))
+		ii_below = findall(rs_height .≤ CBH[k]) |> reverse
+    
+    	var_θv = (Σₖ(θp[ii_below].^2) .- (Σₖ(θp[ii_below])).^2)
+    	all(isnan.(var_θv)) && continue
+    
+    	ii_decop = findlast(var_θv .≤ θ_thr) |> x-> ii_below[x]
+    	decop_hgt[k] = ii_decop ≤ 1 ? 0 : rs_height[ii_decop]
+	end
+
+	return decop_hgt
 end
 # ----/
 
@@ -120,7 +155,7 @@ function Collect_WindDir_using_WVT(INV::Dict, rs::Dict,
     
     for tidx = eachindex(H_wvt)
 
-        # temperal variables for inversion:
+        # temporal variables for inversion:
 	Inv_bot = INV[:HEIGHT][:, tidx]
 	Inv_top = INV[:HEIGHT][:, tidx] .+ INV[:ΔHEIGHT][:, tidx]
 
