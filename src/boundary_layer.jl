@@ -107,34 +107,46 @@ Function to find the height for the mixing layer below cloud base.
 USAGE:
 
 CMLH = cloud_decoupling_height(height, CBH, θᵥ)
-CMLH = cloud_decoupling_height(height, CBH, θᵥ; θ_thr=0.2)
+CMLH = cloud_decoupling_height(height, CBH, θᵥ; θ_thr=0.05)
+TCMLH = cloud_decoupling_height(height, CTH, θᵥ; topmixlayer=true)
 
 WHERE:
 * height::Vector with the profile altitudes,
 * CBH::Vector with the information of the cloud base height to consider,
 * θᵥ::Matrix with the potential temperature (or virtual θ) to use for the estimation
 OPTIONAL:
-* θ_thr=0.25 threshold for the cummulative variance to consider (default 0.25 K²).
+* θ_thr=0.05 threshold for the cummulative variance to consider (default 0.025 K²).
+* topmixlayer=true then the mixing layer is estimaged above the given cloud top CTH
 OUTPUT:
 * CMLH::Vector cloud mixing layer height a.g.l., same units as height.
+* TCMLH::Vector (if optional parameter topmixlayer=true) cloud top mixing layer height above the cloud
 
 """
-function cloud_decoupling_height(rs_height::Vector, CBH::Vector, θᵥ::Matrix; θ_thr=0.25)	
-	# aux function to estimate cumulative sum:
-	Σₖ(x::Vector) = cumsum(x)./(1:length(x))
-	decop_hgt = fill(NaN32, length(CBH))
+function cloud_decoupling_height(rs_height::Vector, CBH::Vector, θᵥ::Matrix; θ_thr=0.025, topmixlayer=false)
+    # aux function to estimate cumulative sum:
+    Σₖ(x::Vector) = cumsum(x)./(1:length(x))
+    decop_hgt = fill(NaN32, length(CBH))
 	
-	for (k, θp) in enumerate(eachcol(θᵥ))
-		ii_below = findall(rs_height .≤ CBH[k]) |> reverse
-    
+    for (k, θp) in enumerate(eachcol(θᵥ))
+	ii_below = if !topmixlayer
+            findall(rs_height .≤ CBH[k]) |> reverse
+        else
+            findall(rs_height .≥ CBH[k])
+        end
+        
     	var_θv = (Σₖ(θp[ii_below].^2) .- (Σₖ(θp[ii_below])).^2)
     	all(isnan.(var_θv)) && continue
-    
+        
     	ii_decop = findlast(var_θv .≤ θ_thr) |> x-> ii_below[x]
-    	decop_hgt[k] = ii_decop ≤ 1 ? 0 : rs_height[ii_decop]
-	end
-
-	return decop_hgt
+        
+    	decop_hgt[k] = if !topmixlayer
+            ii_decop ≤ 1 ? 0 : rs_height[ii_decop]
+        else
+            ii_decop ≤ length(rs_height) ? rs_height[ii_decop] : rs_height[end]
+        end
+    end
+    
+    return decop_hgt
 end
 # ----/
 
