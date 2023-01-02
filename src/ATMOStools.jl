@@ -135,9 +135,10 @@ The estimation is based on the gradient of water vapour transport and is
 by default considered only the part of the atmospheric profile below 600hPa (top).
 
 USAGE:
+> H = estimate_WVT_peak_altitude(rs::Dict)
 > H, idx_max, idx_top = estimate_WVT_peak_altitude(rs::Dict, Hmax=8f3, get_index=true)
-> H = estimate_WVT_peak_altitude(rs::Dict, get_index=false, skipsurface=false)
-> H = estimate_WVT_peak_altitude(rs::Dict, WVT=∇WVT, get_index=false, skipsurface=false)
+> H, maxWVT, snrWVT = estimate_WVT_peak_altitude(rs::Dict, WVT=∇WVT, get_maxsnr=true)
+> H, maxWVT, snrWVT, idx_max, idx_top = estimate_WVT_peak_altitude(rs::Dict, Hmax=8f3, get_index=true, get_maxsnr=true)
 
 WHERE:
 * rs::Dict variable obtained from rs = ATMOStools.getSondeData(sonde_file),
@@ -145,17 +146,20 @@ Optional inputs:
 * WVT::Matrix the vertical gradient of water vapour transport (default compute from rs)
 * Hmax::Real or Hmax::Vector, top height [m], default height Hmax at 600 hPa,
 * get_index::Bool flag to output the indexes for max WVT and Hmax (default false).
+* get_maxsnr::Bool flag to output the values for max WVT and SNR=maxWVT/median(WVT) (default false).
 
 OUTPUT:
-* H::Vector altitudes of maximum WVT flux below Hmax (same units as rs[:height])
+* H::Vector with altitudes of maximum WVT flux below Hmax (same units as rs[:height])
+* maxWVT::Vector containing the value of maximum WVT
+* snrWVT::Vector containing the ration maxWVT/median(WVT), the median is computed discarting maxWVT 
 * idx_max::Vector indexes of rs[:height] to produce H
 * idx_top::Vector indexes of rs corresponding to Hmax::Vector
 
+
 """
-function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, Hmin=nothing, get_index=false, skipsurface=true)
+function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, Hmin=nothing, get_index=false, get_maxsnr=false)
     
     # checking input variables:
-    P_hPa = 10rs[:Pa]  # kPa => hPa
 
     function get_Hxx(Hi, Hdefault)
 	Hout = if isnothing(Hi)
@@ -174,31 +178,6 @@ function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, Hmin=no
     
     Hmax = get_Hxx(Hmax, 8000)
 
-    # if optional input variable "skipsurface=true" then only considers profiles from second layer:
-    i0 = skipsurface ? 2 : 1
-    
-    #### defining Hmax depending on input:
-    ###Hmax = if isnothing(Hmax)
-    ###    Hmax
-    ###elseif typeof(Hmax)<:Real
-    ###    Hmax = fill(Hmax, size(rs[:Pa] ,2))
-    ###elseif typeof(Hmax)<:Vector
-    ###    length(Hmax) != length(rs[:time]) && @warn "Hmax needs to be same length of rs[:time]"
-    ###    Hmax
-    ###else
-    ###    @warn "Hmax needs to be a scalar or vector"
-    ###end
-
-    
-    #### estimating pressure level at maximum given Height, if Hmax not given then by default Pmax=600 [hPa]
-    ###Pmax = if isnothing(Hmax)
-    ###    fill(600, size(rs[:Pa], 2))
-    ###else
-    ###    [altitude2pressure(H_in, H_ref=rs[:height], Pa_ref=P_hPa[:, j]) for (j, H_in) ∈ enumerate(Hmax)]
-    ###end
-
-    ###ii_Pmax = [findlast(≥(P_in), P_hPa[:,j]) for (j, P_in) ∈ enumerate(Pmax)]
-
     ii_Pmax = [findlast(≤(H_in), rs[:height]) for H_in ∈ Hmax]
 
     ii_Pmin = [findfirst(>(H_in), rs[:height]) for H_in ∈ Hmin]
@@ -213,16 +192,21 @@ function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, Hmin=no
 	  end	for (j, imax) in enumerate(ii_Pmax)]
     
     # estimate the index at which qv*WS get maximum below Pmax:    
-    ii_wvt_max = [let profx = fx[i0:k]
-		      profx[isnan.(profx)] .= -9999
-		      try
-		          isnothing(k) ? 0 : argmax(profx)
-		      catch
-			  @error "$(i0) ; $k ; $(profx)"
-		      end
-	          end
-	          for (fx, i0, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmin, tt)]
+    dummy = [let profx = fx[i0:k]
+		 profx[isnan.(profx)] .= -9999
+		 maxii = try
+		     isnothing(k) ? 0 : findmax(profx)
+		 catch
+		     @error "$(i0) ; $k ; $(profx)"
+		 end
+                 (maxii..., maxii[1]/median(filter(<(maxii[1]), profx)) )
+	     end
+	     for (fx, i0, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmin, tt)]
 
+    ii_wvt_max = getindex.(dummy, 2)
+    maxWVT = getindex.(dummy, 1)
+    snrWVT = getindex.(dummy, 3)
+                 
     ii_wvt_max .+= ii_Pmin .-1
 
     H_wvt = [k>0 ? rs[:height][k] : NaN for k ∈ ii_wvt_max]
@@ -231,10 +215,16 @@ function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, Hmin=no
     
     ###ii_wvt_max = [isnothing(k) ? 0 : filter(!isnan, fx[i0:k]) |> argmax for (fx, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmax)]
     ###ii_wvt_max .+= i0
-    
-    get_index && (return H_wvt, ii_wvt_max, ii_Pmax)
 
-    return H_wvt
+    if get_index && get_maxsnr
+        return H_wvt, maxWVT, snrWVT, ii_wvt_max, ii_Pmax
+    elseif get_index && !get_maxsnr
+        return H_wvt, ii_wvt_max, ii_Pmax
+    elseif !get_index && get_maxsnr
+        return H_wvt, maxWVT, snrWVT
+    else
+        return H_wvt
+    end
         
 end
 #function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Pmax= 600, get_index=true)
