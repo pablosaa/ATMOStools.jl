@@ -200,7 +200,8 @@ function estimate_WVT_peak_altitude(rs::Dict; WVT=nothing, Hmax=nothing, Hmin=no
 		 catch
 		     @error "$(i0) ; $k ; $(profx)"
 		 end
-                 (maxii..., maxii[1]/median(filter(<(maxii[1]), profx)) )
+                 snrii = filter(<(maxii[1]), profx)) |> X-> isempty(X) ? NaN32 : median(X)
+                 (maxii..., maxii[1]/snrii )
 	     end
 	     for (fx, i0, k) ∈ zip(eachcol(∇ₕWVT), ii_Pmin, tt)]
 
