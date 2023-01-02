@@ -1,6 +1,7 @@
 module ATMOStools
 
 using Printf
+using Statistics
 
 """
 ATMOStools a set of functions and constants useful for atmospheric physics and meteorology.
