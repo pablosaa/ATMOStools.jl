@@ -148,6 +148,15 @@ function cloud_decoupling_height(rs_height::Vector, CBH::Vector, θᵥ::Matrix; 
     
     return decop_hgt
 end
+function cloud_decoupling_height(rs_height::Vector, CBH::Matrix, θᵥ::Matrix; θ_thr=0.025, topmixlayer=false)
+    ntime, nlayer = size(CBH)
+    decop_hgt = Matrix{typeof(rs_height)}(under, ntime, nlayer)
+    for (i, cbh) ∈ enumerate(eachcol(CBH))
+        decop_hgt[:, i] = cloud_decoupling_height(rs_height, cbh, θᵥ, θ_thr=θ_thr, topmixlayer=topmixlayer)
+    end
+    
+    return decop_hgt
+end
 # ----/
 
 
