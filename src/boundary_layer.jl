@@ -90,7 +90,10 @@ OUTPUT:
 * PBLH:Vector Boundary layer height, same units of height or rs[:height]
 """
 function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25, i0=1)
-    PBLH = [findfirst(>(ξ_ri), x) for x in eachcol(Ri[i0:end, :])] |> x->height[x.+i0.-1]
+    PBLH = let tmp = [findfirst(>(ξ_ri), x) for x in eachcol(Ri[i0:end, :])]
+        #|> x->height[x.+i0.-1]
+        [isnothing(i) ? last(height) : height[i+i0-1] for i ∈ tmp]
+    end
     return PBLH
 end
 # or
