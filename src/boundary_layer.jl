@@ -75,29 +75,32 @@ end
 Function to estimate the Planetary boundary layer height from bulk Ri
 
 USAGE:
-> PBLH = estimate_Ri_PBLH(Ri::Matrix, height::Vector)
-> PBLH = estimate_Ri_PBLH(Ri::Matrix, height::Vector; ξ_ri=0.11)
-> PBLH = estimate_Ri_PBLH(rs::Dict; ξ_ri=0.08)
+> PBLH = estimatei\\_Ri\\_PBLH(Ri::Matrix, height::Vector)
+> PBLH = estimate\\_Ri\\_PBLH(Ri::Matrix, height::Vector; ξ\\_ri=0.11)
+> PBLH = estimate\\_Ri\\_PBLH(rs::Dict; ξ\\_ri=0.08)
 
 WHERE:
 * Ri::Matrix is the bulk Richardson Number (height, time)
 * height::Vector the altitude corresponding to Ri 1st dimension (height)
 * rs::Dict Radiosonde data readed by ARMtools
 Optional variables:
-* ξ_ri::Real Threshold of Ri to consider BLH (default 0.25)
+* ξ\\_ri::Real Threshold of Ri to consider BLH (default 0.25)
+* Hmax::Real The maximum height if ξ\\_ri not found (default height[end-1])
+* i0::Integer lowest index of height::Vector to start the estimation.
 
 OUTPUT:
 * PBLH:Vector Boundary layer height, same units of height or rs[:height]
 """
-function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25, i0=1)
-    𝐻(p) = isnothing(p) ? height[end-1] : height[p+i0-1]
+function estimate_Ri_PBLH(Ri::AbstractMatrix, height::Vector; ξ_ri=0.25, i0=1, Hmax=nothing)
+    Hmax = isnothing(Hmax) ? height[end-1] : Hmax
+    𝐻(p) = isnothing(p) ? Hmax : height[p+i0-1]
     PBLH = [findfirst(≥(ξ_ri), x) |> 𝐻 for x in eachcol(Ri[i0:end, :])]
     return PBLH
 end
 # or
-function estimate_Ri_PBLH(rs::Dict; ξ_ri=0.25, i0=1)
+function estimate_Ri_PBLH(rs::Dict; ξ_ri=0.25, i0=1, Hmax=nothing)
     N², Ri = ATMOStools.Ri_N(rs);
-    return estimate_Ri_PBLH(Ri, rs[:height]; ξ_ri = ξ_ri, i0=i0)
+    return estimate_Ri_PBLH(Ri, rs[:height]; ξ_ri = ξ_ri, i0=i0, Hmax=Hmax)
 end
 # ----/
 
