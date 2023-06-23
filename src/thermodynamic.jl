@@ -367,12 +367,12 @@ function altitude2pressure(H_in::Real; H_ref=nothing, Pa_ref=nothing)
 
     elseif (extrema(H_ref) |>  x-> (x[1] ≤ H_in ≤ x[2]))
         
-	i_1 = findlast(H_ref .≤ H_in)
+	i₁ = findlast(H_ref .≤ H_in)
         
-	i_2 = findfirst(H_ref[i_1:end] .≥ H_in)
+	i₂ = findfirst(H_ref[i₁:end] .≥ H_in)
         
 	# interpolating Pa according the given referencs H_ref and Pa_ref:
-        return (Pa_ref[i_2] - Pa_ref[i_1])/(H_ref[i_2] - H_ref[i_1])*(H_in - H_ref[1])+Pa_ref[1]
+        return i₁ == i₂ ? Pa_ref[i₁] : (Pa_ref[i₂] - Pa_ref[i₁])/(H_ref[i₂] - H_ref[i₁])*(H_in - H_ref[1])+Pa_ref[1]
     else
         @error "$(H_in) lays outside the bounds of H_ref!"
     end
