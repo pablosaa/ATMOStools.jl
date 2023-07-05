@@ -13,6 +13,53 @@ include("constants.jl")
 include("boundary_layer.jl")
 include("thermodynamic.jl")
 include("radiation.jl")
+
+#= ******************************************************************
+
+=#
+"""
+Function to convert Wind U and V component into  wind speed, and direction
+USAGE:
+```julia-repl
+julia> WS, WD = wind_UV2speeddir(U, V)
+```
+WHERE:
+U, V : Wind components U and V [m/s]
+WS   : Wind speed [m/s]
+WD   : Wind direction [deg]
+
+Input variables can be Float, Vector{Float}, or Matrix{Float}
+
+ (c) 2019, Pablo Saavedra G.
+ Geophysical Institute, University of Bergen
+"""
+function wind_speed(U::T, V::T) where T<:AbstractFloat
+    return sqrt(U^2 + V^2)
+end
+function wind_direction(U::T, V::T) where T<:AbstractFloat
+    return mod(360- atand(U,V), 360)
+end
+function wind_UV2speeddir(U::T, V::T) where T<:AbstractFloat
+
+    WS = wind_speed(U, V)
+    WD = wind_direction(U, V)
+    return WS, WD
+end
+# -- OR
+function wind_UV2speeddir(U::T, V::T) where T<:Matrix{AbstractFloat}
+    
+    WS = wind_speed.(U, V)
+    WD = wind_direction.(U, V)
+    return WS, WD
+end
+# -- OR
+function wind_UV2speeddir(U::T, V::T) where T<:Vector{AbstractFloat}
+
+    WS = wind_speed.(U, V)
+    WD = wind_direction.(U, V)
+    return WS, WD
+end
+
 #= ******************************************************************
  Calculating Integrated Water Vapour Transport
 =#
