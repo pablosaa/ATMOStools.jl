@@ -37,7 +37,8 @@ function wind_speed(U::T, V::T) where T<:AbstractFloat
     return sqrt(U^2 + V^2)
 end
 function wind_direction(U::T, V::T) where T<:AbstractFloat
-    return mod(360- atand(U,V), 360)
+    # according to http://colaweb.gmu.edu/dev/clim301/lectures/wind/wind-uv
+    return mod(270 - atand(V, U), 360)
 end
 function wind_UV2speeddir(U::T, V::T) where T<:AbstractFloat
 
