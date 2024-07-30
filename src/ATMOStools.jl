@@ -14,6 +14,9 @@ include("boundary_layer.jl")
 include("thermodynamic.jl")
 include("radiation.jl")
 
+# For module CLIMA:
+Base.include(ATMOStools, "climatology.jl")
+
 #= ******************************************************************
 
 =#
