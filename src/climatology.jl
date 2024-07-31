@@ -106,19 +106,21 @@ Input:
 * ```Yt::AbstractArray``` vector of sampled data corresponding to ```Ts```,
 
 Optional arguments are:
-* ```P::Type{<:Period}``` period of sampling data (default ```Day```),
+* ```P::Type{<:Period}``` period type for output frequency νₖ vector (default ```Dates.Day```),
 * ```dB₀::Float``` minimum threshold to consider in dB (default ```nothing```),
 * ```fullout::Bool``` if true, output include 1st element of FFT (default ```false```)
 
 
-Output ```DF::DataFrame``` with the column names :νₖ, :YdB, :Yfft
+Output ```DF::DataFrame``` with the column names :νₖ, :Pₖ, :YdB, Yfft
 
 """
 function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dB₀=nothing, P::Type{<:Period}=Day, fullout=false)
     N = length(T)
     ΔT = extrema(T) |> t->t[2]-t[1]  # [Millisecoonds]
     Ft = typeof(ΔT)
-    ΔT /= (Ft∘Dates.toms)(P(1))  # Ft(P(1))
+
+    # converting the ΔT from ms to unit given by P (e.g. Year) :
+    ΔT /= (Ft∘Dates.toms)(P(1))  # type of ΔT is Float64
 
     # sampling rate [#/P]
     fₛ = (N-1)/ΔT
@@ -126,11 +128,11 @@ function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dB₀=nothin
     # estimating the half of FFT vector:
     N₂ = round(Int32, N/2)
 
-    # Calculating FFT
-    yfft = fft(yt)
+    # Calculating |FFT|
+    yfft = fft(yt) .|> abs
 
     # Convert output to decibels:
-    ydB = @. 10log10(abs(yfft))
+    ydB = @. 10log10(yfft)
     
     # calculating the frequency bins:
     νₖ = (0:N-1) |> k-> k/N*fₛ
@@ -140,9 +142,10 @@ function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dB₀=nothin
             idx = findall(>(dB₀), ydB[idx])
         end
         fullout && (idx .+= 1)  # add 1 to count for the zero frequency
+        idx
     end
     
-    return νₖ[idx_out], yfft[idx_out], ydB[idx_out]
+    return DataFrame(νₖ=νₖ[idx_out], Pₖ=inv.(νₖ[idx_out]), Yfft=yfft[idx_out], YdB=ydB[idx_out])
     
 end
 # ----/
