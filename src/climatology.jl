@@ -10,7 +10,7 @@ using Dates
 using JSON3
 using FFTW
 using CSV, DataFrames
-
+using HTTP
 
 """
 Function to convert date from fraction of a year to DateTime format.
