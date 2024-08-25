@@ -59,9 +59,19 @@ Reading ENSO and PDO indexes from:
 ```
  
 """
-function load_climate_index(filen::String; Tlim::Tuple{Date, Date}=(), iField=:items)
+function load_climate_index(datain::String; Tlim::Tuple{T, T}=(DateTime(1000,1,1),now()), iField=:items) where T<:DateTime
 
-    fileext = split(filen, '.')[end] |> lowercase
+    # Checking if the file is present in local dir or can be downloaded:
+    fileext = split(datain, '.')[end] |> lowercase
+    
+    filen = if isfile(datain)
+        datain
+    else
+        @info "Trying to download the file"
+        http_response = HTTP.get(datain)
+        http_response.body
+    end
+    
     
     dfindex = if fileext=="json"
         @info "Reading a JSON file"
@@ -72,8 +82,8 @@ function load_climate_index(filen::String; Tlim::Tuple{Date, Date}=(), iField=:i
        
     elseif fileext=="csv"
         @info "Reading a CSV file"
-        http_response = HTTP.get(filen)
-        tmp = CSV.read(http_response.body, header=1, ntasks=1, types=Dict(:ao_index_cdas=>Float32), DataFrame)
+        
+        tmp = CSV.read(filen, header=1, ntasks=1, types=Dict(:ao_index_cdas=>Float32), DataFrame)
         transform!(tmp, [:year, :month, :day] => ByRow(DateTime) => :date)
         filter!(d->!ismissing(d.ao_index_cdas), tmp)
         transform!(tmp, :ao_index_cdas => f->collect(skipmissing(f)), renamecols=false)
@@ -114,7 +124,37 @@ Optional arguments are:
 Output ```DF::DataFrame``` with the column names :νₖ, :Pₖ, :YdB, Yfft
 
 """
-function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dB₀=nothing, P::Type{<:Period}=Day, fullout=false)
+function FourierFrequencies(yt::AbstractArray; fₛ=1, dBₒ=false, fullout=false)
+    # Number of samples in signal:
+    N = length(yt)
+
+    # estimating the half of FFT vector:
+    N₂ = round(Int32, N/2)
+    iseven(N) && (N₂ += 1) 
+
+    # Calculating |FFT|²
+    yfft = fft(yt) |> Y->Y[1:N₂]
+
+    !fullout && (yfft = @. abs(yfft)^2)  # converting into Power spectrum
+    yfft ./= (N*fₛ)
+    yfft[2:end-1] .*= 2
+
+    # calculating the discrete frequency for k-bin:
+    νₖ = (0:N-1) |> k-> k/N*fₛ
+    
+    # Convert output to decibels:
+    dBₒ && (ydB = @. 10log10(yfft))
+
+    df = DataFrame(νₖ=νₖ[1:N₂], Yₖ=yfft)
+    
+    # adding dB variable if flag is true:
+    dBₒ && (df[:, :YdBₖ] = ydB)
+    
+    return ifelse(fullout, df, df[2:end, :])
+end
+# or: 
+function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dBₒ=true, P::Type{<:Period}=Day, fullout=false)
+
     N = length(T)
     ΔT = extrema(T) |> t->t[2]-t[1]  # [Millisecoonds]
     Ft = typeof(ΔT)
@@ -125,27 +165,14 @@ function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dB₀=nothin
     # sampling rate [#/P]
     fₛ = (N-1)/ΔT
 
-    # estimating the half of FFT vector:
-    N₂ = round(Int32, N/2)
+    # Calculating |FFT|²
+    df = FourierFrequencies(yt; fₛ=fₛ, dBₒ=dBₒ, fullout=fullout)
 
-    # Calculating |FFT|
-    yfft = fft(yt) .|> abs
-
-    # Convert output to decibels:
-    ydB = @. 10log10(yfft)
+    # adding the period as νₖ⁻¹
+    insertcols!(df, 2, :Pₖ => inv.(df.νₖ))
     
-    # calculating the frequency bins:
-    νₖ = (0:N-1) |> k-> k/N*fₛ
-    
-    idx_out = let idx=2:N₂
-        if !isnothing(dB₀)
-            idx = findall(>(dB₀), ydB[idx])
-        end
-        fullout && (idx .+= 1)  # add 1 to count for the zero frequency
-        idx
-    end
-    
-    return DataFrame(νₖ=νₖ[idx_out], Pₖ=inv.(νₖ[idx_out]), Yfft=yfft[idx_out], YdB=ydB[idx_out])
+    # returning df
+    return df
     
 end
 # ----/
@@ -165,7 +192,7 @@ function ave_window(y::Vector{<:AbstractFloat}; w::Number=6, 𝐹ave::Function=m
     δw = round(Int8, w/2)
 
     # defining output vector:
-    y_ave = Vector{eltype(y)}(under, length(y_idx))
+    y_ave = Vector{eltype(y)}(undef, length(y_idx))
     
     for (j, i) in enumerate(y_idx)  #eachindex(y)
 	i0 = range(i-δw, i+δw)
