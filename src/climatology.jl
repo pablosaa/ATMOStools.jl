@@ -47,19 +47,27 @@ Output ```DF::DataFrame``` with the column names :date, :idx
 
 Optional arguments are:
 * ```Tlim::Tuple{Date, Date}``` contains 2 dates to limit the dataset (default read all data),
-* ```iFiels::Symbol``` to indicate which field of the JSON file to read (default :items),
+* ```iFiels Symbol or String``` indicate which field of the JSON file to read (default :items),
+* For ```.dat``` files with multiple climate indexes, ```iFields``` can change the default to other column name,
+    e.g. ENSO SST data can be ```iFields="NINO3"``` to rename the Nino3's anomaly to ```:idx```.
 
 Reading Arctic Oscilation index from:
 ```html
 * "https://ftp.cpc.ncep.noaa.gov/cwlinks/norm.daily.ao.cdas.z1000.19500101_current.csv"
 ```
-Reading ENSO and PDO indexes from:
+Reading ENSO and PDO indexes from JSON files provided by:
 ```html
 * "https://sealevel.jpl.nasa.gov/data/vital-signs/pacific-decadal-oscillation"
 ```
  
+Reading NOAA data for ENSO and PDO indexes as .dat files obtained from:
+```html
+* "https://www.ncei.noaa.gov/access/monitoring/products/"
+```
+* * e.g. for ENSO 3-month seasonal Oceanic Nino Index (ONI), or monthly Nino3.4 SST and Anomalies.
+* * for PDO monthly index. 
 """
-function load_climate_index(datain::String; Tlim::Tuple{T, T}=(DateTime(1000,1,1),now()), iField=:items) where T<:DateTime
+function load_climate_index(datain::String; Tlim::Tuple{T, T}=(DateTime(1000,1,1),now()), iField=nothing) where T<:DateTime
 
     # Checking if the file is present in local dir or can be downloaded:
     fileext = split(datain, '.')[end] |> lowercase
@@ -75,6 +83,8 @@ function load_climate_index(datain::String; Tlim::Tuple{T, T}=(DateTime(1000,1,1
     
     dfindex = if fileext=="json"
         @info "Reading a JSON file"
+
+        isnothing(iField) && (iField = :items)
         tmp = JSON3.read(filen)[iField] |> DataFrame
         select!(tmp, [:x, :y] .=> ByRow(f->parse(Float32,f)) .=> [:date, :idx] )
         transform!(tmp, :date => ByRow(PartialYear2DateTime), renamecols=false)
@@ -82,14 +92,58 @@ function load_climate_index(datain::String; Tlim::Tuple{T, T}=(DateTime(1000,1,1
        
     elseif fileext=="csv"
         @info "Reading a CSV file"
+
+        isnothing(iField) && (iField = :ao_index_cdas)
         
-        tmp = CSV.read(filen, header=1, ntasks=1, types=Dict(:ao_index_cdas=>Float32), DataFrame)
+        tmp = CSV.read(filen, header=1, ntasks=1, types=Dict(iField=>Float32), DataFrame)
         transform!(tmp, [:year, :month, :day] => ByRow(DateTime) => :date)
         filter!(d->!ismissing(d.ao_index_cdas), tmp)
-        transform!(tmp, :ao_index_cdas => f->collect(skipmissing(f)), renamecols=false)
-        select!(tmp, [:date, :ao_index_cdas] .=> [:date, :idx])
+        transform!(tmp, iField => f->collect(skipmissing(f)), renamecols=false)
+        select!(tmp, [:date, iField] .=> [:date, :idx])
+        tmp
+    elseif fileext=="dat"
+        @info "Reading a DAT file"
+        
+        tmp = open(filen, "r") do IO
+            kopf = readline(IO)
+            # checking what kind of file is:
+            dat = if contains(kopf, "PDO Index")
+                dat = CSV.read(IO, DataFrame; missingstring="99.99", delim=' ', ignorerepeated=true)
+            
+                # stacking the 12 months into a column:
+                dat = sort(stack(dat, variable_name=:month, value_name=:idx), :Year)
+                # converting Year and Month columns into DateTime format with column name :date
+                select(dat, [:Year, :month] => ByRow((y,m)->DateTime("$(y)-"*m, "yyyy-u")) => :date, :idx)
+
+            elseif contains(kopf, "NINO")
+                isnothing(iField) && (iField = "NINO3.4")
+                header_names = split(kopf)
+                iidx = findfirst(==(iField), header_names) + 1
+                header_names[iidx] = "idx"
+
+                dat = CSV.read(IO, delim=' ', ignorerepeated=true, DataFrame, header=Symbol.(header_names) )
+                select(dat, [:YR, :MON] => ByRow((y,m)->DateTime(y,m)) => :date, names(dat)[3:end]...)
+
+            elseif contains(kopf, "SEAS")
+                isnothing(iField) && (iField = "ANOM")
+                header_names = split(kopf)
+                iidx = findfirst(==(iField), header_names)
+                header_names[iidx] = "idx"
+
+                dat = CSV.read(IO, delim=' ', ignorerepeated=true, DataFrame, header=Symbol.(header_names) )
+                # defining the seasons as numeric from 1 to 12:
+                monaten = Dict(ss=>i for (i,ss) in enumerate(["DJF","JFM","FMA", "MAM", "AMJ", "MJJ", "JJA", "JAS", "ASO", "SON", "OND", "NDJ"]))
+                transform(dat, [:SEAS, :YR] => ByRow((x,y)->DateTime(y,monaten[x]))=>:date, renamecols=false)
+            else
+                @warn "DAT file not supported!"
+                none
+            end
+            # returning DF after filtering out the missing values:
+            filter(!ismissing, dat)
+        end
         tmp
     else
+        
         @warn "Data file name not supported, needs to be CSV or JSON."
         none
     end
@@ -108,20 +162,21 @@ Script to estimate the 3 most powered FFT frequencies from time series:
 Function to perform a FFT to timeseries vector given the period of data sampling.
 
 ```julia-repl
+julia> DF = FourierFrequencies(Yt; fₛ=5)
 julia> DF = FourierFrequencies(Ts, Yt)
-julia> DF = FourierFrequencies(Ts, Yt; P=Week, dB₀=20, fullout=true)
+julia> DF = FourierFrequencies(Ts, Yt; P=Week, dBₒ=true, fullout=true)
 ``` 
 Input:
-* ```Ts::Vector{DateTime}``` vector of time series,
-* ```Yt::AbstractArray``` vector of sampled data corresponding to ```Ts```,
+* ```Ts::Vector{DateTime}``` DateTime corresponding for time series samples,
+* ```Yt::AbstractArray``` sampled data (signal) corresponding to ```Ts```,
 
 Optional arguments are:
 * ```P::Type{<:Period}``` period type for output frequency νₖ vector (default ```Dates.Day```),
-* ```dB₀::Float``` minimum threshold to consider in dB (default ```nothing```),
-* ```fullout::Bool``` if true, output include 1st element of FFT (default ```false```)
+* ```dB₀::Bool``` flag to output the power spectrum in dB (default ```true``` if ```Ts``` is given),
+* ```fullout::Bool``` if true, outputs the imaginary power spectrum including 1st element DC value (default ```false```)
+* ```fₛ::Real``` sampling rate (default 1, if ```Ts``` is given, ```fₛ``` is estimated based on ```Ts```)
 
-
-Output ```DF::DataFrame``` with the column names :νₖ, :Pₖ, :YdB, Yfft
+Output ```DF::DataFrame``` with the column names :νₖ, :Pₖ, :Yₖ, :YdBₖ
 
 """
 function FourierFrequencies(yt::AbstractArray; fₛ=1, dBₒ=false, fullout=false)
@@ -159,8 +214,8 @@ function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dBₒ=true, 
     ΔT = extrema(T) |> t->t[2]-t[1]  # [Millisecoonds]
     Ft = typeof(ΔT)
 
-    # converting the ΔT from ms to unit given by P (e.g. Year) :
-    ΔT /= (Ft∘Dates.toms)(P(1))  # type of ΔT is Float64
+    # converting the ΔT from sampling units (e.g. days) to period given by P (e.g. Year) :
+    ΔT /= (Ft∘Dates.toms)(P(1))  # type of ΔT is Float64 and the unit is [P] (e.g Year)
 
     # sampling rate [#/P]
     fₛ = (N-1)/ΔT
@@ -170,7 +225,7 @@ function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dBₒ=true, 
 
     # adding the period as νₖ⁻¹
     insertcols!(df, 2, :Pₖ => inv.(df.νₖ))
-    
+
     # returning df
     return df
     
