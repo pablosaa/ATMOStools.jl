@@ -11,6 +11,7 @@ using JSON3
 using FFTW
 using CSV, DataFrames
 using HTTP
+using StatsBase
 
 """
 Function to convert date from fraction of a year to DateTime format.
@@ -138,8 +139,7 @@ function load_climate_index(datain::String; Tlim::Tuple{T, T}=(DateTime(1000,1,1
                 @warn "DAT file not supported!"
                 none
             end
-            # returning DF after filtering out the missing values:
-            filter(!ismissing, dat)
+
         end
         tmp
     else
@@ -164,7 +164,7 @@ Function to perform a FFT to timeseries vector given the period of data sampling
 ```julia-repl
 julia> DF = FourierFrequencies(Yt; fₛ=5)
 julia> DF = FourierFrequencies(Ts, Yt)
-julia> DF = FourierFrequencies(Ts, Yt; P=Week, dBₒ=true, fullout=true)
+julia> DF = FourierFrequencies(Ts, Yt; P=Week, tₕ=3.1, fullout=true)
 ``` 
 Input:
 * ```Ts::Vector{DateTime}``` DateTime corresponding for time series samples,
@@ -172,14 +172,23 @@ Input:
 
 Optional arguments are:
 * ```P::Type{<:Period}``` period type for output frequency νₖ vector (default ```Dates.Day```),
-* ```dB₀::Bool``` flag to output the power spectrum in dB (default ```true``` if ```Ts``` is given),
+* ```tₕ::Real``` threshold to limit noise in phase calculation (default ```nothing``` which uses ```maximum(Yₖ)/10```),
 * ```fullout::Bool``` if true, outputs the imaginary power spectrum including 1st element DC value (default ```false```)
 * ```fₛ::Real``` sampling rate (default 1, if ```Ts``` is given, ```fₛ``` is estimated based on ```Ts```)
 
-Output ```DF::DataFrame``` with the column names :νₖ, :Pₖ, :Yₖ, :YdBₖ
+Output ```DF::DataFrame``` with the column names:
+* ```νₖ::Vector{Float64}``` Frequency in units ```1/P``` (default ```P=day```),
+* ```Pₖ::Vector{Float64}``` Period as ```νₖ⁻¹```,
+* ```Yₖ::Vector{Float64}``` or ```Vector{Complex{Float64}}``` amplitude of FFT,
+* ```ϕₖ::Vector{Float64}``` phase of FFT in units ```deg```,
+* ```YdBₖ::Vector{Float64}``` power spectrum in units ```[dB P]``` (default ```P=day```)
 
 """
-function FourierFrequencies(yt::AbstractArray; fₛ=1, dBₒ=false, fullout=false)
+function FourierFrequencies(yt::AbstractArray; fₛ=1, tₕ=nothing, fullout=false)
+
+    # Avoiding missing data:
+    yt = (collect∘skipmissing)(yt)
+    
     # Number of samples in signal:
     N = length(yt)
 
@@ -187,28 +196,33 @@ function FourierFrequencies(yt::AbstractArray; fₛ=1, dBₒ=false, fullout=fals
     N₂ = round(Int32, N/2)
     iseven(N) && (N₂ += 1) 
 
-    # Calculating |FFT|²
-    yfft = fft(yt) |> Y->Y[1:N₂]
+    # Calculating |FFT|² and the phase ϕₖ of the signal:
+    𝑌 = fft(yt) |> Y->Y[1:N₂]
+    yfft, ϕ = let y= @. abs(𝑌)^2
+        y ./= (N*fₛ)
+        y[2:end-1] .*= 2
+        
+        tₕ = ifelse(isnothing(tₕ), maximum(y)/10, tₕ)
+        println(tₕ)
 
-    !fullout && (yfft = @. abs(yfft)^2)  # converting into Power spectrum
-    yfft ./= (N*fₛ)
-    yfft[2:end-1] .*= 2
+        phi = @. ifelse(y<tₕ, missing, atand(imag(𝑌)/real(𝑌)) )
+        y, phi
+    end
+    
+    fullout && (yfft = 𝑌)  # output as FFT complex vector
 
     # calculating the discrete frequency for k-bin:
     νₖ = (0:N-1) |> k-> k/N*fₛ
     
     # Convert output to decibels:
-    dBₒ && (ydB = @. 10log10(yfft))
+    ydB = @. 10log10(yfft)
 
-    df = DataFrame(νₖ=νₖ[1:N₂], Yₖ=yfft)
-    
-    # adding dB variable if flag is true:
-    dBₒ && (df[:, :YdBₖ] = ydB)
+    df = DataFrame(νₖ=νₖ[1:N₂], Yₖ=yfft, ϕₖ=ϕ, YdBₖ=ydB)
     
     return ifelse(fullout, df, df[2:end, :])
 end
 # or: 
-function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dBₒ=true, P::Type{<:Period}=Day, fullout=false)
+function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; P::Type{<:Period}=Day, tₕ=nothing, fullout=false)
 
     N = length(T)
     ΔT = extrema(T) |> t->t[2]-t[1]  # [Millisecoonds]
@@ -221,7 +235,7 @@ function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; dBₒ=true, 
     fₛ = (N-1)/ΔT
 
     # Calculating |FFT|²
-    df = FourierFrequencies(yt; fₛ=fₛ, dBₒ=dBₒ, fullout=fullout)
+    df = FourierFrequencies(yt; fₛ=fₛ, tₕ=tₕ, fullout=fullout)
 
     # adding the period as νₖ⁻¹
     insertcols!(df, 2, :Pₖ => inv.(df.νₖ))
