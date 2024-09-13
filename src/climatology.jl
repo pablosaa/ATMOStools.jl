@@ -203,7 +203,6 @@ function FourierFrequencies(yt::AbstractArray; fₛ=1, tₕ=nothing, fullout=fal
         y[2:end-1] .*= 2
         
         tₕ = ifelse(isnothing(tₕ), maximum(y)/10, tₕ)
-        println(tₕ)
 
         phi = @. ifelse(y<tₕ, missing, atand(imag(𝑌)/real(𝑌)) )
         y, phi
