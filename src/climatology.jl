@@ -175,6 +175,7 @@ Optional arguments are:
 * ```tₕ::Real``` threshold to limit noise in phase calculation (default ```nothing``` which uses ```maximum(Yₖ)/10```),
 * ```fullout::Bool``` if true, outputs the imaginary power spectrum including 1st element DC value (default ```false```)
 * ```fₛ::Real``` sampling rate (default 1, if ```Ts``` is given, ```fₛ``` is estimated based on ```Ts```)
+* ```norm_unit::Bool``` if ```true``` and ```Ts``` is given, then the power stectrum is normalized to the ```Ts``` resolution, otherwise is normalized to ```P``` units.
 
 Output ```DF::DataFrame``` with the column names:
 * ```νₖ::Vector{Float64}``` Frequency in units ```1/P``` (default ```P=day```),
@@ -221,7 +222,7 @@ function FourierFrequencies(yt::AbstractArray; fₛ=1, tₕ=nothing, fullout=fal
     return ifelse(fullout, df, df[2:end, :])
 end
 # or: 
-function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; P::Type{<:Period}=Day, tₕ=nothing, fullout=false)
+function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; P::Type{<:Period}=Day, tₕ=nothing, fullout=false, norm_unit=true)
 
     N = length(T)
     ΔT = extrema(T) |> t->t[2]-t[1]  # [Millisecoonds]
@@ -238,6 +239,15 @@ function FourierFrequencies(T::Vector{DateTime}, yt::AbstractArray; P::Type{<:Pe
 
     # adding the period as νₖ⁻¹
     insertcols!(df, 2, :Pₖ => inv.(df.νₖ))
+        
+    # if option given, convert normalization factor 1/fₛ from P to ΔT units:
+    if norm_unit
+        # the median resolutin of time vector T [milliseconds]
+        δt=diff(T) .|> Dates.toms |> median
+        δt /= Dates.toms(P(1))
+        df.Yₖ ./= δt
+        df.YdBₖ .-= 10log10(δt);
+    end
 
     # returning df
     return df
