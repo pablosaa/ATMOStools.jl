@@ -262,7 +262,7 @@ end
 
 
 """
-function ave_window(y::Vector{<:AbstractFloat}; w::Number=6, 𝐹ave::Function=mean, sp=1)
+function ave_window(y::Vector{<:AbstractFloat}; w::Number=6, 𝐹ave::Function=mean, sp=1, edges=true)
     n = length(y)
     y_idx = range(sp, step=sp, stop=n)
 
@@ -270,14 +270,15 @@ function ave_window(y::Vector{<:AbstractFloat}; w::Number=6, 𝐹ave::Function=m
     δw = round(Int8, w/2)
 
     # defining output vector:
-    y_ave = Vector{eltype(y)}(undef, length(y_idx))
+    y_ave = fill(NaN32, length(y_idx)) #Vector{eltype(y)}(undef, length(y_idx))
     
     for (j, i) in enumerate(y_idx)  #eachindex(y)
 	i0 = range(i-δw, i+δw)
-	i1 = min.(n, max.(1, i0))
-	ω = ones(length(i0))
-	ω[i0.<1] .= 0.5
-	ω[i0.>n] .= 0.5
+        (!edges && any(i0 .< 1 .|| i0 .> n )) && continue
+        i1 = filter(k->1≤k≤n, i0) # min.(n, max.(1, i0))
+        ω = @. 1 - abs(i1 - j)/length(i1)  #ones(length(i0))
+	#ω[i0.<1] .= 0.5
+	#ω[i0.>n] .= 0.5
 	inan = findall(!isnan, y[i1])
         # calculating the window average accoring to function 𝐹ave with weights ω:
 	y_ave[j] = 𝐹ave(y[i1][inan], weights(ω[inan]))
