@@ -270,16 +270,18 @@ function ave_window(y::Vector{<:AbstractFloat}; w::Number=6, 𝐹ave::Function=m
     δw = round(Int8, w/2)
 
     # defining output vector:
-    y_ave = fill(NaN32, length(y_idx)) #Vector{eltype(y)}(undef, length(y_idx))
+    y_ave = fill(NaN32, length(y_idx)) 
     
-    for (j, i) in enumerate(y_idx)  #eachindex(y)
+    for (j, i) in enumerate(y_idx)
 	i0 = range(i-δw, i+δw)
-        (!edges && any(i0 .< 1 .|| i0 .> n )) && continue
-        i1 = filter(k->1≤k≤n, i0) # min.(n, max.(1, i0))
-        ω = @. 1 - abs(i1 - j)/length(i1)  #ones(length(i0))
-	#ω[i0.<1] .= 0.5
-	#ω[i0.>n] .= 0.5
-	inan = findall(!isnan, y[i1])
+        n0 = length(i0)
+        i1 = filter(k->1≤k≤n, i0) # min.(n, max.(1, i0)
+        # if edges=false, then skip indexes ≤ δw or ≥ n-δw:
+        (!edges && n0!=length(i1)) && continue
+        # definig weights:)
+        ω = @. 1 - abs(i1 - j)/n0
+	# selecting only values of y that are not NaNs:
+        inan = findall(!isnan, y[i1])
         # calculating the window average accoring to function 𝐹ave with weights ω:
 	y_ave[j] = 𝐹ave(y[i1][inan], weights(ω[inan]))
     end
