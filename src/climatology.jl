@@ -270,7 +270,8 @@ function ave_window(y::Vector{<:AbstractFloat}; w::Number=6, 𝐹ave::Function=m
     δw = round(Int8, w/2)
 
     # defining output vector:
-    y_ave = fill(NaN32, length(y_idx)) 
+    TT = eltype(y) 
+    y_ave = TT.(fill(NaN, length(y_idx)) )
     
     for (j, i) in enumerate(y_idx)
 	i0 = range(i-δw, i+δw)
