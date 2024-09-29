@@ -199,7 +199,7 @@ function FourierFrequencies(yt::AbstractArray; fₛ=1, tₕ=nothing, fullout=fal
 
     # Calculating |FFT|² and the phase ϕₖ of the signal:
     𝑌 = fft(yt) |> Y->Y[1:N₂]
-    yfft, ϕ = let y= @. abs(𝑌)^2
+    yfft, ϕ = let y= @. abs2(𝑌)   # abs2(Y) == abs(Y)²
         y ./= (N*fₛ)
         y[2:end-1] .*= 2
         
@@ -258,29 +258,58 @@ end
 # ==========
 """
 ===================================================================
- Function to apply running window average to minimize seasonality:
-
-
+ Function to apply moving window average to minimize seasonality:
+```julia-repl
+julia> Ysm = ave_window(Yin; w=5, 𝐹ave=median)
+julia> Ysm = ave_window(Yin; w=[0.1, 0.4, 1, 0.6, 0.2], 𝐹ave=median)
+```
+Where:
+* ```Yin::Vector``` data to be averaged,
+* ```w::Number``` the width of the window (default=6) to moving average, or
+* ```w::Vector``` the weigths used for the moving average applied to the middle point,
+* ```𝐹ave::Function``` to use for the evarage (default ```mean```),
+* ```sp::Number``` step to consider for the vector ```Yin```, (default=1 i.e. every element),
+* ```edges::Bool``` in case ```w::Number``` wheter or not include the edges not covered by a full window w (default ```true```).
+Output:
+* ```Ysm::Vector``` the same length as ```Yin``` but smoothed by moving average ```𝐹ave``` function.
 """
-function ave_window(y::Vector{<:AbstractFloat}; w::Number=6, 𝐹ave::Function=mean, sp=1, edges=true)
+function ave_window(y::Vector{<:AbstractFloat}; w=6, 𝐹ave::Function=mean, sp=1, edges=true)
     n = length(y)
     y_idx = range(sp, step=sp, stop=n)
 
     # defining weights length centered at data point:
-    δw = round(Int8, w/2)
+    if typeof(w)<:Union{Number, Vector} && ndims(w)<2
+        nw = length(w)
+        iseven(nw) && @error("when w::Vector, the length(w) needs to be odd.")
+    else
+        @error("window parameter w must be a scalar or Vector!")
+    end
+
+    δw = ifelse(nw==1, w, nw) |> x-> floor(Int8, x/2)
 
     # defining output vector:
     TT = eltype(y) 
     y_ave = TT.(fill(NaN, length(y_idx)) )
     
     for (j, i) in enumerate(y_idx)
-	i0 = range(i-δw, i+δw)
+        i0 = if nw==1
+            range(i-δw, i+δw)
+        else
+            range(i-δw, length(nw))
+        end
+
         n0 = length(i0)
-        i1 = filter(k->1≤k≤n, i0) # min.(n, max.(1, i0)
+        i1 = filter(k->1≤k≤n, i0)
         # if edges=false, then skip indexes ≤ δw or ≥ n-δw:
         (!edges && n0!=length(i1)) && continue
         # definig weights:)
-        ω = @. 1 - abs(i1 - j)/n0
+        ω = if nw==1
+            @. 1 - abs(i1 - j)/n0
+        else
+            ij = findall(x->0 <x≤n, i0)
+            w[ij]
+        end
+
 	# selecting only values of y that are not NaNs:
         inan = findall(!isnan, y[i1])
         # calculating the window average accoring to function 𝐹ave with weights ω:
