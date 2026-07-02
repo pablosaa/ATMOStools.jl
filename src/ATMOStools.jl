@@ -18,8 +18,47 @@ include("radiation.jl")
 Base.include(ATMOStools, "climatology.jl")
 
 #= ******************************************************************
-
+WIND FUNCTIONS
 =#
+"""
+Function to convert wind speed, and direction into U and V component
+USAGE:
+```julia-repl
+julia> U, V = windspeed2UV(WS, WD)
+```
+WHERE:
+U, V : Wind components U and V [m/s]
+WS   : Wind speed [m/s]
+WD   : Wind direction [deg]
+
+Input variables can be Float, Vector{Float}, or Matrix{Float}
+
+ (c) 2019, Pablo Saavedra G.
+ Geophysical Institute, University of Bergen
+
+"""
+function windspeed2UV(WS::T, WD::T) where T<:AbstractFloat
+	U = WS*cosd(WD)
+	V = WS*sind(WD)
+
+	return U, V
+end
+# -- OR
+function windspeed2UV(WS::T, WD::T) where T<:Vector{AbstractFloat}
+	UV = windspeed2UV.(WS, WD)
+	U = first.(UV)
+	V = last.(UV)
+	return U, V 
+end
+# -- OR
+function windspeed2UV(WS::T, WD::T) where T<:Matrix{AbstractFloat}
+	UV = windspeed2UV.(WS, WD)
+	U = first.(UV)
+	V = last.(UV)
+	return U, V 
+end
+
+
 """
 Function to convert Wind U and V component into  wind speed, and direction
 USAGE:
